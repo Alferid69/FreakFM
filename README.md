@@ -119,7 +119,7 @@ flutter test integration_test/app_test.dart -d <android-device-id>
 
 ```bash
 # bump `version:` in pubspec.yaml first, then:
-git tag v1.2.0 && git push origin v1.2.0
+git tag v1.3.0 && git push origin v1.3.0
 ```
 
 To sign releases with your own key, add the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them the APKs are debug-signed (installable, but not Play Store-ready).
