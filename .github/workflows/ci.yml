@@ -88,4 +88,16 @@ jobs:
           cache: true
 
       - run: flutter pub get
-      - run: flutter test integration_test -d windows --reporter expanded
+
+      - name: Run integration tests
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test integration_test -d windows --reporter expanded 2>&1 | tee integration.log
+
+      # Surface the failure details as annotations on the run summary.
+      - name: Report failures
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "Expected|Actual|Which|Timed out|EXCEPTION|Exception|Error|error|\[E\]|Playback" integration.log             | head -40 | while IFS= read -r line; do echo "::error::${line}"; done
