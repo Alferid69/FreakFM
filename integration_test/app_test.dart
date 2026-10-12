@@ -226,11 +226,11 @@ void main() {
       await waitFor(tester, () => find.text('Integration').hitTestable().evaluate().isNotEmpty,
           reason: 'album grid');
       await tester.tap(find.text('Integration').hitTestable().first);
-      await waitFor(tester, () => find.text('Play All').evaluate().isNotEmpty, reason: 'album detail');
+      await waitFor(tester, () => find.text('Play Album').evaluate().isNotEmpty, reason: 'album detail');
 
       // First Back: back to the album grid, still on the Albums tab.
       expect(await tester.binding.handlePopRoute(), isTrue);
-      await waitFor(tester, () => find.text('Play All').evaluate().isEmpty, reason: 'album closed');
+      await waitFor(tester, () => find.text('Play Album').evaluate().isEmpty, reason: 'album closed');
       expect(find.text('Integration'), findsWidgets);
 
       // Second Back: return to the Songs tab instead of quitting. (Never send
