@@ -1,25 +1,50 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'package:audio_service/audio_service.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import 'freak_audio_handler.dart';
+import 'library_service.dart';
 import 'lyrics_service.dart';
+import 'playback_queue.dart';
 
-enum AudioRepeatMode { off, all, one }
+export 'playback_queue.dart' show AudioRepeatMode;
+
+/// One equalizer band as exposed to the UI.
+class EqualizerBandInfo {
+  final int index;
+  final double centerFrequencyHz;
+  final double gainDb;
+  const EqualizerBandInfo(this.index, this.centerFrequencyHz, this.gainDb);
+}
+
+class EqualizerState {
+  final double minDb;
+  final double maxDb;
+  final List<EqualizerBandInfo> bands;
+  const EqualizerState({required this.minDb, required this.maxDb, required this.bands});
+}
 
 class AudioPlayerService {
   static final AudioPlayerService instance = AudioPlayerService._internal();
   AudioPlayerService._internal() {
-    _initAudioPlayer();
+    _init();
   }
 
-  final AudioPlayer _player = AudioPlayer();
+  static bool get _isAndroid => !kIsWeb && Platform.isAndroid;
+
+  final AndroidEqualizer? _equalizer = _isAndroid ? AndroidEqualizer() : null;
+  late final AudioPlayer _player = AudioPlayer(
+    audioPipeline: _equalizer == null ? null : AudioPipeline(androidAudioEffects: [_equalizer]),
+  );
+  final PlaybackQueue _queue = PlaybackQueue();
 
   final ValueNotifier<Song?> currentSong = ValueNotifier<Song?>(null);
   final ValueNotifier<bool> isPlaying = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> isBuffering = ValueNotifier<bool>(false);
   final ValueNotifier<Duration> position = ValueNotifier<Duration>(Duration.zero);
   final ValueNotifier<Duration> duration = ValueNotifier<Duration>(Duration.zero);
   final ValueNotifier<bool> isShuffle = ValueNotifier<bool>(false);
@@ -30,83 +55,91 @@ class AudioPlayerService {
   final ValueNotifier<double> playbackSpeed = ValueNotifier<double>(1.0);
   final ValueNotifier<int?> sleepTimerRemainingMinutes = ValueNotifier<int?>(null);
   final ValueNotifier<bool> sleepAtEndOfTrack = ValueNotifier<bool>(false);
-  final ValueNotifier<String> equalizerPreset = ValueNotifier<String>('Hi-Fi Warm');
+  final ValueNotifier<String> equalizerPreset = ValueNotifier<String>('Flat');
+  final ValueNotifier<bool> equalizerEnabled = ValueNotifier<bool>(false);
 
-  Timer? _mockPlaybackTimer;
+  final StreamController<String> _errors = StreamController<String>.broadcast();
+
+  /// User-facing playback errors (e.g. a file that can't be decoded).
+  Stream<String> get errors => _errors.stream;
+
   Timer? _sleepTimer;
-  StreamSubscription? _posSub;
-  StreamSubscription? _durSub;
-  StreamSubscription? _stateSub;
-  StreamSubscription? _completeSub;
+  final List<StreamSubscription<dynamic>> _subs = [];
+  int _loadToken = 0;
+  int _consecutiveFailures = 0;
+  bool _completionHandled = false;
+  bool _equalizerRestored = false;
+  double _previousVolume = 0.85;
 
-  void _initAudioPlayer() {
+  static const String _prefEqPreset = 'pref_eq_preset';
+  static const String _prefEqEnabled = 'pref_eq_enabled';
+  static const String _prefEqCustom = 'pref_eq_custom_gains';
+
+  /// Preset curves sampled at these frequencies; device bands interpolate.
+  static const List<double> presetFrequencies = [60, 230, 910, 3600, 14000];
+  static const Map<String, List<double>> equalizerPresets = {
+    'Flat': [0, 0, 0, 0, 0],
+    'Bass Boost': [6, 4.5, 1, 0, 0],
+    'Warm': [3, 2, 0, 1.5, 3.5],
+    'Vocal': [-1, 1, 4.5, 3, 1],
+    'Acoustic': [2, 1, 2, 3, 4],
+    'Electronic': [5, 3, 0, 2.5, 4.5],
+    'Treble Boost': [0, 0, 1, 4, 6],
+  };
+
+  bool get equalizerSupported => _equalizer != null;
+
+  void _init() {
     _player.setVolume(volume.value);
+    unawaited(_configureSession());
+    unawaited(_loadEqualizerPrefs());
 
-    // Request persistent audio focus for music playback so Android routes
-    // media button events (Bluetooth earbuds, AirPods, lock screen) to freak player
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      try {
-        final audioContext = AudioContext(
-          android: const AudioContextAndroid(
-            isSpeakerphoneOn: false,
-            stayAwake: true,
-            contentType: AndroidContentType.music,
-            usageType: AndroidUsageType.media,
-            audioFocus: AndroidAudioFocus.gain,
-            audioMode: AndroidAudioMode.normal,
-          ),
-          iOS: AudioContextIOS(
-            category: AVAudioSessionCategory.playback,
-            options: {
-              AVAudioSessionOptions.defaultToSpeaker,
-            },
-          ),
-        );
+    _subs.add(_player.positionStream.listen((pos) {
+      position.value = pos;
+    }));
 
-        AudioPlayer.global.setAudioContext(audioContext);
-        _player.setAudioContext(audioContext);
-      } catch (e) {
-        debugPrint('AudioContext initialization error: $e');
+    _subs.add(_player.durationStream.listen((dur) {
+      final song = currentSong.value;
+      if (dur == null || dur <= Duration.zero || song == null) return;
+      duration.value = dur;
+      LibraryService.instance.updateDuration(song, dur);
+    }));
+
+    _subs.add(_player.playerStateStream.listen((state) {
+      final completed = state.processingState == ProcessingState.completed;
+      final playing = state.playing && !completed;
+      final buffering = state.processingState == ProcessingState.loading ||
+          state.processingState == ProcessingState.buffering;
+      final changed = playing != isPlaying.value || buffering != isBuffering.value;
+      isPlaying.value = playing;
+      isBuffering.value = buffering;
+      if (changed) _broadcastPlaybackState();
+
+      if (completed && !_completionHandled) {
+        _completionHandled = true;
+        _handleTrackCompleted();
       }
+    }));
+  }
+
+  Future<void> _configureSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      // Headphones unplugged / Bluetooth disconnected: pause instead of
+      // suddenly blasting through the speaker.
+      _subs.add(session.becomingNoisyEventStream.listen((_) => pause()));
+    } catch (e) {
+      debugPrint('Audio session setup failed: $e');
     }
-
-    _posSub = _player.onPositionChanged.listen((pos) {
-      if (currentSong.value != null && !currentSong.value!.isSample) {
-        position.value = pos;
-        if (pos.inMilliseconds > duration.value.inMilliseconds) {
-          duration.value = pos;
-          currentSong.value!.durationMs = pos.inMilliseconds;
-        }
-        _broadcastPlaybackState();
-      }
-    });
-
-    _durSub = _player.onDurationChanged.listen((dur) {
-      if (currentSong.value != null && !currentSong.value!.isSample && dur.inMilliseconds > 0) {
-        duration.value = dur;
-        currentSong.value!.durationMs = dur.inMilliseconds;
-        _broadcastPlaybackState();
-      }
-    });
-
-    _stateSub = _player.onPlayerStateChanged.listen((state) {
-      if (currentSong.value != null && !currentSong.value!.isSample) {
-        isPlaying.value = (state == PlayerState.playing);
-        _broadcastPlaybackState();
-      }
-    });
-
-    _completeSub = _player.onPlayerComplete.listen((_) {
-      _handleTrackCompleted();
-    });
   }
 
   void _broadcastPlaybackState() {
     try {
       FreakAudioHandler.instance?.updatePlaybackState(
         isPlaying: isPlaying.value,
-        position: position.value,
-        duration: duration.value,
+        isBuffering: isBuffering.value,
+        position: _player.position,
         isShuffle: isShuffle.value,
         repeatMode: repeatMode.value,
         speed: playbackSpeed.value,
@@ -115,139 +148,120 @@ class AudioPlayerService {
     } catch (_) {}
   }
 
-  void broadcastStateManually() {
-    _broadcastPlaybackState();
+  void _syncQueueNotifiers() {
+    queue.value = _queue.songs;
+    queueIndex.value = _queue.index;
   }
 
+  /// Plays [song]. With [contextQueue] the queue is replaced by that list;
+  /// otherwise the song is jumped to (if queued) or inserted next.
   Future<void> playSong(Song song, {List<Song>? contextQueue}) async {
-    _mockPlaybackTimer?.cancel();
-
     if (contextQueue != null && contextQueue.isNotEmpty) {
-      queue.value = List<Song>.from(contextQueue);
-      final idx = queue.value.indexWhere((s) => s.id == song.id);
-      queueIndex.value = idx >= 0 ? idx : 0;
-    } else if (!queue.value.any((s) => s.id == song.id)) {
-      queue.value = [song, ...queue.value];
-      queueIndex.value = 0;
+      final idx = contextQueue.indexWhere((s) => s.id == song.id);
+      _queue.setQueue(contextQueue, idx >= 0 ? idx : 0);
+      _queue.setShuffle(isShuffle.value);
     } else {
-      queueIndex.value = queue.value.indexWhere((s) => s.id == song.id);
+      final idx = _queue.songs.indexWhere((s) => s.id == song.id);
+      _queue.jumpTo(idx >= 0 ? idx : _queue.insertNext(song));
     }
+    _syncQueueNotifiers();
+    await _loadAndPlay(song);
+  }
+
+  Future<void> _loadAndPlay(Song song) async {
+    final token = ++_loadToken;
+    // Swapping sources can emit a stale "completed" for the previous track;
+    // ignore completions until the new source has loaded.
+    _completionHandled = true;
 
     currentSong.value = song;
-    unawaited(LyricsService.instance.fetchLyrics(song));
-    song.playCount++;
     position.value = Duration.zero;
     duration.value = Duration(milliseconds: song.durationMs);
-
-    if (!song.isSample) {
-      try {
-        await _player.stop();
-        final Source source = song.filePath.startsWith('content://')
-            ? UrlSource(song.filePath)
-            : DeviceFileSource(song.filePath);
-
-        await _player.play(source);
-        await _player.setPlaybackRate(playbackSpeed.value);
-        isPlaying.value = true;
-
-        if (!kIsWeb && Platform.isAndroid) {
-          try {
-            await AudioService.androidForceEnableMediaButtons();
-          } catch (_) {}
-        }
-        final d = await _player.getDuration();
-        if (d != null && d.inMilliseconds > 0) {
-          duration.value = d;
-          song.durationMs = d.inMilliseconds;
-        }
-      } catch (e) {
-        debugPrint('Playback error on audio file: $e');
-        _startSimulatedPlayback(song);
-      }
-    } else {
-      // High fidelity smooth simulated playback for benchmark catalog
-      _startSimulatedPlayback(song);
-    }
+    unawaited(FreakAudioHandler.instance?.broadcastSong(song));
 
     try {
-      FreakAudioHandler.instance?.broadcastSong(song);
+      final source = _sourceFor(song);
+      final loaded = await _player.setAudioSource(source);
+      if (token != _loadToken) return; // superseded by a newer request
+      _completionHandled = false;
+
+      if (loaded != null && loaded > Duration.zero) {
+        duration.value = loaded;
+        LibraryService.instance.updateDuration(song, loaded);
+      }
+      unawaited(_player.play());
+      _consecutiveFailures = 0;
+      LibraryService.instance.recordPlay(song);
+      unawaited(LyricsService.instance.fetchLyrics(song));
+      if (!_equalizerRestored) unawaited(_restoreEqualizer());
       _broadcastPlaybackState();
-    } catch (_) {}
+    } catch (e) {
+      if (token != _loadToken) return;
+      debugPrint('Playback error for ${song.filePath}: $e');
+      _errors.add('Can\'t play "${song.title}" — the file is missing or unsupported.');
+      isPlaying.value = false;
+      _broadcastPlaybackState();
+
+      _consecutiveFailures++;
+      if (_consecutiveFailures < _queue.songs.length) {
+        await next();
+      } else {
+        _consecutiveFailures = 0;
+      }
+    }
   }
 
-  void _startSimulatedPlayback(Song song) {
-    _player.stop();
-    isPlaying.value = true;
-    _mockPlaybackTimer?.cancel();
-    _mockPlaybackTimer = Timer.periodic(const Duration(milliseconds: 250), (timer) {
-      if (!isPlaying.value) return;
-
-      final stepMs = (250 * playbackSpeed.value).toInt();
-      final nextMs = position.value.inMilliseconds + stepMs;
-      if (nextMs >= song.durationMs) {
-        _handleTrackCompleted();
-      } else {
-        position.value = Duration(milliseconds: nextMs);
-      }
-    });
+  AudioSource _sourceFor(Song song) {
+    final uri = song.contentUri;
+    if (_isAndroid && uri != null && uri.startsWith('content://')) {
+      return AudioSource.uri(Uri.parse(uri));
+    }
+    if (song.filePath.startsWith('content://')) {
+      return AudioSource.uri(Uri.parse(song.filePath));
+    }
+    if (!File(song.filePath).existsSync()) {
+      throw FileSystemException('File not found', song.filePath);
+    }
+    return AudioSource.file(song.filePath);
   }
 
   void _handleTrackCompleted() {
     if (sleepAtEndOfTrack.value) {
       sleepAtEndOfTrack.value = false;
-      isPlaying.value = false;
-      _player.pause();
-      _broadcastPlaybackState();
+      unawaited(_player.pause());
+      unawaited(_player.seek(Duration.zero));
       return;
     }
 
     if (repeatMode.value == AudioRepeatMode.one && currentSong.value != null) {
-      seek(Duration.zero);
-      if (currentSong.value!.isSample) {
-        isPlaying.value = true;
-      } else {
-        _player.seek(Duration.zero);
-        _player.resume();
-      }
-      _broadcastPlaybackState();
-    } else {
-      next();
+      _completionHandled = false;
+      unawaited(_player.seek(Duration.zero));
+      unawaited(_player.play());
+      return;
     }
+    unawaited(next(fromCompletion: true));
   }
 
   Future<void> play() async {
     final song = currentSong.value;
     if (song == null) {
-      if (queue.value.isNotEmpty) {
-        await playSong(queue.value.first);
-      }
+      if (_queue.songs.isNotEmpty) await playSong(_queue.songs[_queue.index]);
       return;
     }
-
-    if (!kIsWeb && Platform.isAndroid) {
-      try {
-        await AudioService.androidForceEnableMediaButtons();
-      } catch (_) {}
+    final state = _player.processingState;
+    if (state == ProcessingState.idle) {
+      await _loadAndPlay(song);
+      return;
     }
-
-    if (!isPlaying.value) {
-      isPlaying.value = true;
-      if (!song.isSample) {
-        await _player.resume();
-      }
-      _broadcastPlaybackState();
+    if (state == ProcessingState.completed) {
+      _completionHandled = false;
+      await _player.seek(Duration.zero);
     }
+    unawaited(_player.play());
   }
 
   Future<void> pause() async {
-    final song = currentSong.value;
-    if (isPlaying.value) {
-      isPlaying.value = false;
-      if (song != null && !song.isSample) {
-        await _player.pause();
-      }
-      _broadcastPlaybackState();
-    }
+    await _player.pause();
   }
 
   Future<void> togglePlayPause() async {
@@ -260,26 +274,19 @@ class AudioPlayerService {
 
   Future<void> seek(Duration pos) async {
     position.value = pos;
-    final song = currentSong.value;
-    if (song != null && !song.isSample) {
-      await _player.seek(pos);
-    }
+    await _player.seek(pos);
     _broadcastPlaybackState();
   }
 
   Future<void> seekRelative(Duration delta) async {
-    final currentMs = position.value.inMilliseconds;
     final totalMs = duration.value.inMilliseconds;
-    final maxMs = totalMs > 0 ? totalMs : currentMs + 10000;
-    final targetMs = (currentMs + delta.inMilliseconds).clamp(0, maxMs);
-    await seek(Duration(milliseconds: targetMs));
+    final targetMs = position.value.inMilliseconds + delta.inMilliseconds;
+    await seek(Duration(milliseconds: targetMs.clamp(0, totalMs > 0 ? totalMs : max(targetMs, 0))));
   }
 
   Future<void> setPlaybackSpeed(double speed) async {
     playbackSpeed.value = speed;
-    try {
-      await _player.setPlaybackRate(speed);
-    } catch (_) {}
+    await _player.setSpeed(speed);
     _broadcastPlaybackState();
   }
 
@@ -287,12 +294,7 @@ class AudioPlayerService {
     _sleepTimer?.cancel();
     sleepAtEndOfTrack.value = endOfTrack;
 
-    if (endOfTrack) {
-      sleepTimerRemainingMinutes.value = null;
-      return;
-    }
-
-    if (minutes == null) {
+    if (endOfTrack || minutes == null) {
       sleepTimerRemainingMinutes.value = null;
       return;
     }
@@ -303,9 +305,7 @@ class AudioPlayerService {
       if (remaining == null || remaining <= 1) {
         timer.cancel();
         sleepTimerRemainingMinutes.value = null;
-        if (isPlaying.value) {
-          togglePlayPause();
-        }
+        pause();
       } else {
         sleepTimerRemainingMinutes.value = remaining - 1;
       }
@@ -320,112 +320,76 @@ class AudioPlayerService {
 
   void toggleCurrentFavorite() {
     final song = currentSong.value;
-    if (song != null) {
-      song.isFavorite = !song.isFavorite;
-      currentSong.value = song;
-    }
+    if (song != null) LibraryService.instance.toggleFavorite(song);
   }
 
-  void next() {
-    if (queue.value.isEmpty) return;
-
-    int nextIndex;
-    if (isShuffle.value && queue.value.length > 1) {
-      final candidates = List.generate(queue.value.length, (i) => i)..remove(queueIndex.value);
-      nextIndex = candidates[Random().nextInt(candidates.length)];
-    } else {
-      nextIndex = queueIndex.value + 1;
-      if (nextIndex >= queue.value.length) {
-        if (repeatMode.value == AudioRepeatMode.all) {
-          nextIndex = 0;
-        } else {
-          isPlaying.value = false;
-          _broadcastPlaybackState();
-          return;
-        }
-      }
-    }
-
-    queueIndex.value = nextIndex;
-    playSong(queue.value[nextIndex]);
-  }
-
-  void previous() {
-    if (queue.value.isEmpty) return;
-
-    if (position.value.inSeconds > 3) {
-      seek(Duration.zero);
+  Future<void> next({bool fromCompletion = false}) async {
+    final idx = _queue.advance(repeatMode.value);
+    if (idx == null) {
+      // End of the queue with repeat off: stop at the start of the last song.
+      await _player.pause();
+      await _player.seek(Duration.zero);
       return;
     }
-
-    int prevIndex = queueIndex.value - 1;
-    if (prevIndex < 0) {
-      prevIndex = queue.value.length - 1;
-    }
-
-    queueIndex.value = prevIndex;
-    playSong(queue.value[prevIndex]);
+    _syncQueueNotifiers();
+    await _loadAndPlay(_queue.songs[idx]);
   }
 
-  void toggleShuffle() {
-    isShuffle.value = !isShuffle.value;
+  Future<void> previous() async {
+    if (_queue.isEmpty) return;
+    if (position.value.inSeconds > 3) {
+      await seek(Duration.zero);
+      return;
+    }
+    final idx = _queue.retreat(repeatMode.value);
+    if (idx == null) {
+      await seek(Duration.zero);
+      return;
+    }
+    _syncQueueNotifiers();
+    await _loadAndPlay(_queue.songs[idx]);
+  }
+
+  void toggleShuffle() => setShuffle(!isShuffle.value);
+
+  void setShuffle(bool enabled) {
+    isShuffle.value = enabled;
+    _queue.setShuffle(enabled);
+    _broadcastPlaybackState();
+  }
+
+  void setRepeatMode(AudioRepeatMode mode) {
+    repeatMode.value = mode;
     _broadcastPlaybackState();
   }
 
   void cycleRepeatMode() {
-    switch (repeatMode.value) {
-      case AudioRepeatMode.off:
-        repeatMode.value = AudioRepeatMode.all;
-        break;
-      case AudioRepeatMode.all:
-        repeatMode.value = AudioRepeatMode.one;
-        break;
-      case AudioRepeatMode.one:
-        repeatMode.value = AudioRepeatMode.off;
-        break;
-    }
-    _broadcastPlaybackState();
+    setRepeatMode(switch (repeatMode.value) {
+      AudioRepeatMode.off => AudioRepeatMode.all,
+      AudioRepeatMode.all => AudioRepeatMode.one,
+      AudioRepeatMode.one => AudioRepeatMode.off,
+    });
   }
 
   void removeFromQueue(int index) {
-    if (index < 0 || index >= queue.value.length) return;
-    final list = List<Song>.from(queue.value)..removeAt(index);
-    queue.value = list;
-    if (queueIndex.value >= list.length) {
-      queueIndex.value = max(0, list.length - 1);
-    }
+    if (index == _queue.index) return; // can't remove what's playing
+    _queue.removeAt(index);
+    _syncQueueNotifiers();
   }
 
   void shuffleQueue() {
-    if (queue.value.length <= 1) return;
-    final current = currentSong.value;
-    final shuffled = List<Song>.from(queue.value)..shuffle();
-    if (current != null) {
-      shuffled.removeWhere((s) => s.id == current.id);
-      shuffled.insert(0, current);
-      queueIndex.value = 0;
-    }
-    queue.value = shuffled;
+    _queue.shuffleInPlace();
+    _syncQueueNotifiers();
   }
 
   void clearQueue() {
-    final current = currentSong.value;
-    if (current != null) {
-      queue.value = [current];
-      queueIndex.value = 0;
-    } else {
-      queue.value = [];
-      queueIndex.value = 0;
-    }
+    _queue.clearUpcoming();
+    _syncQueueNotifiers();
   }
-
-  double _previousVolume = 0.85;
 
   Future<void> setVolume(double vol) async {
     final clamped = vol.clamp(0.0, 1.0);
-    if (clamped > 0) {
-      _previousVolume = clamped;
-    }
+    if (clamped > 0) _previousVolume = clamped;
     volume.value = clamped;
     await _player.setVolume(clamped);
   }
@@ -443,17 +407,120 @@ class AudioPlayerService {
     await setVolume(volume.value + delta);
   }
 
-  void setEqualizerPreset(String preset) {
-    equalizerPreset.value = preset;
+  // ---------------------------------------------------------------------------
+  // Equalizer (Android only — backed by android.media.audiofx.Equalizer)
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadEqualizerPrefs() async {
+    if (!equalizerSupported) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      equalizerPreset.value = prefs.getString(_prefEqPreset) ?? 'Flat';
+      equalizerEnabled.value = prefs.getBool(_prefEqEnabled) ?? false;
+    } catch (_) {}
+  }
+
+  /// Band layout and gains from the device; null when the equalizer is not
+  /// available yet (nothing has been loaded) or not supported.
+  Future<EqualizerState?> equalizerState() async {
+    final eq = _equalizer;
+    if (eq == null || currentSong.value == null) return null;
+    try {
+      final params = await eq.parameters.timeout(const Duration(seconds: 3));
+      return EqualizerState(
+        minDb: params.minDecibels,
+        maxDb: params.maxDecibels,
+        bands: [
+          for (final b in params.bands) EqualizerBandInfo(b.index, _toHz(b.centerFrequency), b.gain),
+        ],
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setEqualizerEnabled(bool enabled) async {
+    final eq = _equalizer;
+    if (eq == null) return;
+    equalizerEnabled.value = enabled;
+    await eq.setEnabled(enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefEqEnabled, enabled);
+  }
+
+  Future<void> applyEqualizerPreset(String name) async {
+    final eq = _equalizer;
+    final curve = equalizerPresets[name];
+    if (eq == null || curve == null) return;
+    equalizerPreset.value = name;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefEqPreset, name);
+    try {
+      final params = await eq.parameters.timeout(const Duration(seconds: 3));
+      for (final band in params.bands) {
+        final gain = presetGainAt(curve, _toHz(band.centerFrequency))
+            .clamp(params.minDecibels, params.maxDecibels);
+        await band.setGain(gain.toDouble());
+      }
+    } catch (_) {}
+  }
+
+  Future<void> setEqualizerBandGain(int bandIndex, double gainDb) async {
+    final eq = _equalizer;
+    if (eq == null) return;
+    try {
+      final params = await eq.parameters.timeout(const Duration(seconds: 3));
+      await params.bands[bandIndex].setGain(gainDb);
+      equalizerPreset.value = 'Custom';
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefEqPreset, 'Custom');
+      await prefs.setStringList(_prefEqCustom, params.bands.map((b) => b.gain.toString()).toList());
+    } catch (_) {}
+  }
+
+  Future<void> _restoreEqualizer() async {
+    final eq = _equalizer;
+    if (eq == null) return;
+    _equalizerRestored = true;
+    try {
+      await eq.setEnabled(equalizerEnabled.value);
+      if (equalizerPreset.value == 'Custom') {
+        final prefs = await SharedPreferences.getInstance();
+        final saved = prefs.getStringList(_prefEqCustom) ?? const [];
+        final params = await eq.parameters.timeout(const Duration(seconds: 3));
+        for (var i = 0; i < params.bands.length && i < saved.length; i++) {
+          await params.bands[i].setGain(double.tryParse(saved[i]) ?? 0);
+        }
+      } else {
+        await applyEqualizerPreset(equalizerPreset.value);
+      }
+    } catch (_) {}
+  }
+
+  /// just_audio reports Hz; guard against platforms that report milliHertz.
+  static double _toHz(double f) => f > 100000 ? f / 1000 : f;
+
+  /// Interpolates a preset curve (defined at [presetFrequencies]) at [hz]
+  /// on a log-frequency scale.
+  static double presetGainAt(List<double> curve, double hz) {
+    if (hz <= presetFrequencies.first) return curve.first;
+    if (hz >= presetFrequencies.last) return curve.last;
+    for (var i = 0; i < presetFrequencies.length - 1; i++) {
+      final f0 = presetFrequencies[i], f1 = presetFrequencies[i + 1];
+      if (hz >= f0 && hz <= f1) {
+        final t = (log(hz) - log(f0)) / (log(f1) - log(f0));
+        return curve[i] + (curve[i + 1] - curve[i]) * t;
+      }
+    }
+    return 0;
   }
 
   void dispose() {
-    _mockPlaybackTimer?.cancel();
     _sleepTimer?.cancel();
-    _posSub?.cancel();
-    _durSub?.cancel();
-    _stateSub?.cancel();
-    _completeSub?.cancel();
+    for (final s in _subs) {
+      s.cancel();
+    }
+    _errors.close();
     _player.dispose();
   }
 }

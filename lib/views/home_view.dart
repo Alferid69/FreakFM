@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/song.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_service.dart';
 import '../services/music_scanner_service.dart';
 import '../services/storage_cache_service.dart';
 import '../theme/app_theme.dart';
@@ -27,8 +30,12 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin {
+  final LibraryService _library = LibraryService.instance;
   late TabController _tabController;
-  List<Song> _allSongs = [];
+  late final AppLifecycleListener _lifecycle;
+  StreamSubscription<String>? _errorSub;
+  Timer? _searchDebounce;
+
   List<Song> _filteredSongs = [];
   bool _isLoading = true;
   SortOption _currentSort = SortOption.title;
@@ -40,57 +47,55 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     super.initState();
     _tabController = TabController(length: 6, vsync: this);
     _searchController.addListener(_onSearchChanged);
+    _library.songs.addListener(_applySortAndFilter);
+    _library.revision.addListener(_onLibraryRevision);
+    _errorSub = AudioPlayerService.instance.errors.listen(_showPlaybackError);
+    // Persist pending favourite/play-count changes before the OS can kill us.
+    _lifecycle = AppLifecycleListener(
+      onPause: _library.flush,
+      onDetach: _library.flush,
+      onHide: _library.flush,
+    );
     _loadInitialLibrary();
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
+    _errorSub?.cancel();
+    _searchDebounce?.cancel();
+    _library.songs.removeListener(_applySortAndFilter);
+    _library.revision.removeListener(_onLibraryRevision);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  /// Loads real user music from local cache or scans device storage directly.
-  /// Never generates synthetic/test audios.
   Future<void> _loadInitialLibrary() async {
-    final cached = await StorageCacheService.loadCachedSongs();
-
-    if (cached != null && cached.isNotEmpty) {
-      final realSongs = cached.where((s) => !s.isSample).toList();
-      if (realSongs.isNotEmpty) {
-        setState(() {
-          _allSongs = realSongs;
-          _isLoading = false;
-        });
-        _applySortAndFilter();
-        return;
-      }
+    final hasCache = await _library.loadFromCache();
+    if (!mounted) return;
+    if (hasCache) {
+      setState(() => _isLoading = false);
+      _applySortAndFilter();
+      return;
     }
-
-    // Scan real device storage across CrossDevice, Documents, Downloads, Music, MediaStore, etc.
     await _scanDeviceStorage();
   }
 
   Future<void> _scanDeviceStorage() async {
-    setState(() {
-      _isLoading = true;
-    });
+    if (_library.songs.value.isEmpty) setState(() => _isLoading = true);
 
-    final hasPermission = await MusicScannerService.requestStoragePermissions();
-    if (hasPermission) {
-      final dirs = await MusicScannerService.getDefaultMusicDirectories();
-      final result = await MusicScannerService.scanDirectories(dirs);
-      setState(() {
-        _allSongs = result.songs;
-        _isLoading = false;
-      });
-      _applySortAndFilter();
-      return;
-    } else {
-      if (mounted && (Platform.isAndroid || Platform.isIOS)) {
-        ScaffoldMessenger.of(context).showSnackBar(
+    final outcome = await _library.rescan();
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    _applySortAndFilter();
+
+    final messenger = ScaffoldMessenger.of(context);
+    switch (outcome) {
+      case ScanOutcome.permissionDenied:
+        messenger.showSnackBar(
           SnackBar(
-            content: const Text('Music / Storage permission is required to find your audio files.'),
+            content: const Text('Music permission is required to find your audio files.'),
             action: SnackBarAction(
               label: 'Settings',
               textColor: AppTheme.accentAmber,
@@ -99,23 +104,41 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
             duration: const Duration(seconds: 6),
           ),
         );
-      }
+      case ScanOutcome.failed:
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Scanning failed. Your existing library was kept.')),
+        );
+      case ScanOutcome.success:
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Library updated • ${_library.songs.value.length} tracks'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
     }
+  }
 
-    setState(() {
-      _allSongs = [];
-      _isLoading = false;
-    });
-    _applySortAndFilter();
+  void _showPlaybackError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+    );
+  }
+
+  void _onLibraryRevision() {
+    // Favourite/play-count changes only need a repaint, not a re-sort.
+    if (mounted) setState(() {});
   }
 
   void _onSearchChanged() {
-    _applySortAndFilter();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 150), _applySortAndFilter);
   }
 
   void _applySortAndFilter() {
+    if (!mounted) return;
     final query = _searchController.text.trim().toLowerCase();
-    List<Song> list = List.from(_allSongs);
+    List<Song> list = List.of(_library.songs.value);
 
     if (query.isNotEmpty) {
       list = list.where((song) {
@@ -130,19 +153,14 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     switch (_currentSort) {
       case SortOption.title:
         list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-        break;
       case SortOption.artist:
         list.sort((a, b) => a.artist.toLowerCase().compareTo(b.artist.toLowerCase()));
-        break;
       case SortOption.duration:
         list.sort((a, b) => b.durationMs.compareTo(a.durationMs));
-        break;
       case SortOption.dateAdded:
         list.sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
-        break;
       case SortOption.fileSize:
         list.sort((a, b) => b.fileSize.compareTo(a.fileSize));
-        break;
     }
 
     setState(() {
@@ -152,19 +170,130 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
 
   void _onShuffleAll() {
     if (_filteredSongs.isEmpty) return;
-    final shuffled = List<Song>.from(_filteredSongs)..shuffle();
-    AudioPlayerService.instance.playSong(shuffled.first, contextQueue: shuffled);
+    final player = AudioPlayerService.instance;
+    player.setShuffle(true);
+    final start = _filteredSongs[Random().nextInt(_filteredSongs.length)];
+    player.playSong(start, contextQueue: _filteredSongs);
   }
 
   Future<void> _addCustomFolderFromUI() async {
     final selectedDirectory = await FilePicker.getDirectoryPath();
     if (selectedDirectory != null && selectedDirectory.isNotEmpty) {
-      final existing = await StorageCacheService.loadCustomDirectories();
-      if (!existing.contains(selectedDirectory)) {
-        await StorageCacheService.saveCustomDirectories([...existing, selectedDirectory]);
-      }
+      await _library.addFolder(selectedDirectory);
       await _scanDeviceStorage();
     }
+  }
+
+  Future<void> _showLibraryFolders() async {
+    final defaults = await MusicScannerService.defaultLibraryRoots();
+    final custom = await StorageCacheService.loadCustomDirectories();
+    final hidden = await StorageCacheService.loadExcludedDirectories();
+    if (!mounted) return;
+
+    var changed = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.spotifyCardElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            Widget header(String text) => Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 14, 8, 4),
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: AppTheme.spotifyLightGrey,
+                    ),
+                  ),
+                );
+
+            Widget folderTile(String path, {Widget? trailing}) => ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.folder_rounded, color: AppTheme.accentAmber),
+                  title: Text(
+                    path,
+                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+                  ),
+                  trailing: trailing,
+                );
+
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  children: [
+                    const Text(
+                      'Library folders',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.spotifyWhite),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Only these folders are scanned. Audio stored by other apps is never included.',
+                      style: TextStyle(fontSize: 12.5, color: AppTheme.spotifyLightGrey),
+                    ),
+                    header('DEFAULT'),
+                    if (defaults.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('None found', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      ),
+                    for (final d in defaults) folderTile(d),
+                    header('ADDED BY YOU'),
+                    for (final d in custom)
+                      folderTile(
+                        d,
+                        trailing: IconButton(
+                          tooltip: 'Remove folder',
+                          icon: const Icon(Icons.close_rounded, color: AppTheme.spotifyLightGrey),
+                          onPressed: () async {
+                            await _library.removeFolder(d);
+                            changed = true;
+                            setSheetState(() => custom.remove(d));
+                          },
+                        ),
+                      ),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.create_new_folder_outlined, color: AppTheme.spotifyGreen),
+                      title: const Text('Add folder', style: TextStyle(color: AppTheme.spotifyGreen)),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _addCustomFolderFromUI();
+                      },
+                    ),
+                    if (hidden.isNotEmpty) ...[
+                      header('HIDDEN'),
+                      for (final d in hidden)
+                        folderTile(
+                          d,
+                          trailing: TextButton(
+                            onPressed: () async {
+                              await _library.unhideFolder(d);
+                              changed = true;
+                              setSheetState(() => hidden.remove(d));
+                            },
+                            child: const Text('Unhide'),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (changed && mounted) await _scanDeviceStorage();
   }
 
   void _showSortDialog() {
@@ -217,13 +346,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           color: isSelected ? AppTheme.spotifyWhite : AppTheme.spotifyLightGrey,
         ),
       ),
-      trailing: isSelected
-          ? const Icon(Icons.check_rounded, color: AppTheme.spotifyGreen)
-          : null,
+      trailing: isSelected ? const Icon(Icons.check_rounded, color: AppTheme.spotifyGreen) : null,
       onTap: () {
-        setState(() {
-          _currentSort = option;
-        });
+        _currentSort = option;
         _applySortAndFilter();
         Navigator.pop(context);
       },
@@ -232,7 +357,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    final foldersCount = _filteredSongs.map((s) => s.folder).toSet().length;
+    final foldersCount = _filteredSongs.map((s) => s.folderPath).toSet().length;
     final artistsCount = _filteredSongs.map((s) => s.artist).toSet().length;
     final albumsCount = _filteredSongs.map((s) => s.album).toSet().length;
     final genresCount = _filteredSongs.map((s) => s.genre).toSet().length;
@@ -253,7 +378,6 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // App Icon Badge with Spotify Green Rim
             Container(
               width: 32,
               height: 32,
@@ -284,26 +408,27 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           ],
         ),
         actions: [
-          // Master Volume Quick Control
-          const VolumeControllerWidget(
-            mode: VolumeDisplayMode.popup,
+          const VolumeControllerWidget(mode: VolumeDisplayMode.popup),
+          ValueListenableBuilder<bool>(
+            valueListenable: _library.isScanning,
+            builder: (context, scanning, _) => IconButton(
+              key: const ValueKey('rescan_button'),
+              iconSize: 20,
+              padding: const EdgeInsets.all(6),
+              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              icon: scanning
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.spotifyWhite),
+                    )
+                  : const Icon(Icons.refresh_rounded, color: AppTheme.spotifyWhite),
+              onPressed: scanning ? null : _scanDeviceStorage,
+              tooltip: 'Rescan library',
+            ),
           ),
-
-          // Rescan Storage
           IconButton(
-            iconSize: 20,
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-            icon: const Icon(Icons.refresh_rounded, color: AppTheme.spotifyWhite),
-            onPressed: () async {
-              await StorageCacheService.clearCache();
-              await _scanDeviceStorage();
-            },
-            tooltip: 'Rescan storage',
-          ),
-
-          // Search Toggle
-          IconButton(
+            key: const ValueKey('search_button'),
             iconSize: 20,
             padding: const EdgeInsets.all(6),
             constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
@@ -314,22 +439,27 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
             onPressed: () {
               setState(() {
                 _isSearchOpen = !_isSearchOpen;
-                if (!_isSearchOpen) {
-                  _searchController.clear();
-                }
+                if (!_isSearchOpen) _searchController.clear();
               });
             },
             tooltip: 'Search library',
           ),
-
-          // Sort Menu
-          IconButton(
-            iconSize: 20,
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-            icon: const Icon(Icons.sort_rounded, color: AppTheme.spotifyWhite),
-            onPressed: _showSortDialog,
-            tooltip: 'Sort tracks',
+          PopupMenuButton<String>(
+            key: const ValueKey('library_menu'),
+            icon: const Icon(Icons.more_vert_rounded, color: AppTheme.spotifyWhite, size: 20),
+            color: AppTheme.spotifyCardElevated,
+            onSelected: (value) {
+              switch (value) {
+                case 'sort':
+                  _showSortDialog();
+                case 'folders':
+                  _showLibraryFolders();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'sort', child: Text('Sort tracks')),
+              PopupMenuItem(value: 'folders', child: Text('Library folders')),
+            ],
           ),
           const SizedBox(width: 4),
         ],
@@ -337,11 +467,11 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           preferredSize: Size.fromHeight(_isSearchOpen ? 116 : 56),
           child: Column(
             children: [
-              // Search Input Field when expanded
               if (_isSearchOpen)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                   child: TextField(
+                    key: const ValueKey('search_field'),
                     controller: _searchController,
                     autofocus: true,
                     style: const TextStyle(color: AppTheme.spotifyWhite, fontSize: 14),
@@ -367,19 +497,13 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                     ),
                   ),
                 ),
-
-              // TOP TABS (NOT BOTTOM NAVIGATION)
-              TopTabBar(
-                controller: _tabController,
-                tabs: tabs,
-              ),
+              TopTabBar(controller: _tabController, tabs: tabs),
             ],
           ),
         ),
       ),
       body: Stack(
         children: [
-          // Tab Views Content
           _isLoading
               ? const Center(
                   child: CircularProgressIndicator(
@@ -392,53 +516,19 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                   children: [
                     TracksTabView(
                       songs: _filteredSongs,
-                      onSongsChanged: () {
-                        setState(() {});
-                        StorageCacheService.saveCachedSongs(_allSongs);
-                      },
                       onShuffleAll: _onShuffleAll,
                       onScanStorage: _scanDeviceStorage,
-                      onAddFolder: _addCustomFolderFromUI,
+                      onAddFolder: Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isMacOS
+                          ? _addCustomFolderFromUI
+                          : null,
                     ),
-                    FoldersTabView(
-                      songs: _filteredSongs,
-                      onSongsChanged: () {
-                        setState(() {});
-                        StorageCacheService.saveCachedSongs(_allSongs);
-                      },
-                    ),
-                    ArtistsTabView(
-                      songs: _filteredSongs,
-                      onSongsChanged: () {
-                        setState(() {});
-                        StorageCacheService.saveCachedSongs(_allSongs);
-                      },
-                    ),
-                    AlbumsTabView(
-                      songs: _filteredSongs,
-                      onSongsChanged: () {
-                        setState(() {});
-                        StorageCacheService.saveCachedSongs(_allSongs);
-                      },
-                    ),
-                    GenresTabView(
-                      songs: _filteredSongs,
-                      onSongsChanged: () {
-                        setState(() {});
-                        StorageCacheService.saveCachedSongs(_allSongs);
-                      },
-                    ),
-                    FavoritesTabView(
-                      songs: _filteredSongs,
-                      onSongsChanged: () {
-                        setState(() {});
-                        StorageCacheService.saveCachedSongs(_allSongs);
-                      },
-                    ),
+                    FoldersTabView(songs: _filteredSongs),
+                    ArtistsTabView(songs: _filteredSongs),
+                    AlbumsTabView(songs: _filteredSongs),
+                    GenresTabView(songs: _filteredSongs),
+                    FavoritesTabView(songs: _filteredSongs),
                   ],
                 ),
-
-          // Floating Persistent Mini Player Dock at bottom
           const Positioned(
             left: 0,
             right: 0,

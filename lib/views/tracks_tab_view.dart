@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/track_list_tile.dart';
 
 class TracksTabView extends StatelessWidget {
   final List<Song> songs;
-  final VoidCallback onSongsChanged;
   final VoidCallback onShuffleAll;
   final VoidCallback? onScanStorage;
   final VoidCallback? onAddFolder;
@@ -14,7 +14,6 @@ class TracksTabView extends StatelessWidget {
   const TracksTabView({
     super.key,
     required this.songs,
-    required this.onSongsChanged,
     required this.onShuffleAll,
     this.onScanStorage,
     this.onAddFolder,
@@ -301,8 +300,7 @@ class TracksTabView extends StatelessWidget {
                             player.playSong(song, contextQueue: songs);
                           },
                           onFavoriteToggle: () {
-                            song.isFavorite = !song.isFavorite;
-                            onSongsChanged();
+                            LibraryService.instance.toggleFavorite(song);
                           },
                           onMoreOptions: () {
                             _showTrackDetailsModal(context, song);

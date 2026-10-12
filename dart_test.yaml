@@ -1,0 +1,4 @@
+tags:
+  network:
+    # Talks to lrclib.net; excluded in CI with --exclude-tags network.
+    timeout: 30s

@@ -29,6 +29,11 @@ class LyricsData {
   final bool isError;
   final String? errorMessage;
 
+  /// True when the lookup succeeded but no source had lyrics for the song.
+  /// Such results are cached for a while instead of re-queried every play.
+  final bool isNotFound;
+  final int fetchedAtMs;
+
   LyricsData({
     required this.songId,
     required this.title,
@@ -39,7 +44,27 @@ class LyricsData {
     required this.isSynced,
     this.isError = false,
     this.errorMessage,
-  });
+    this.isNotFound = false,
+    int? fetchedAtMs,
+  }) : fetchedAtMs = fetchedAtMs ?? DateTime.now().millisecondsSinceEpoch;
+
+  /// Same lyrics bound to another song id (cache entries are keyed by
+  /// artist/title, so one entry can serve several copies of a track).
+  LyricsData withSongId(String id) => id == songId
+      ? this
+      : LyricsData(
+          songId: id,
+          title: title,
+          artist: artist,
+          plainLyrics: plainLyrics,
+          syncedLines: syncedLines,
+          source: source,
+          isSynced: isSynced,
+          isError: isError,
+          errorMessage: errorMessage,
+          isNotFound: isNotFound,
+          fetchedAtMs: fetchedAtMs,
+        );
 
   bool get isEmpty =>
       (plainLyrics == null || plainLyrics!.trim().isEmpty) && syncedLines.isEmpty;
@@ -54,6 +79,8 @@ class LyricsData {
     'isSynced': isSynced,
     'isError': isError,
     'errorMessage': errorMessage,
+    'isNotFound': isNotFound,
+    'fetchedAtMs': fetchedAtMs,
   };
 
   factory LyricsData.fromJson(Map<String, dynamic> json) => LyricsData(
@@ -69,9 +96,11 @@ class LyricsData {
     isSynced: json['isSynced'] as bool? ?? false,
     isError: json['isError'] as bool? ?? false,
     errorMessage: json['errorMessage'] as String?,
+    isNotFound: json['isNotFound'] as bool? ?? false,
+    fetchedAtMs: (json['fetchedAtMs'] as num?)?.toInt() ?? 0,
   );
 
-  factory LyricsData.empty(String songId, String title, String artist, {String? message}) =>
+  factory LyricsData.empty(String songId, String title, String artist, {String? message, bool notFound = false}) =>
       LyricsData(
         songId: songId,
         title: title,
@@ -80,5 +109,6 @@ class LyricsData {
         isSynced: false,
         isError: message != null,
         errorMessage: message,
+        isNotFound: notFound,
       );
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
 
+/// Equalizer backed by the device's audio effect engine (Android). Bands and
+/// their range come from the hardware, so the sliders change the real sound.
 class EqualizerDialog extends StatefulWidget {
   const EqualizerDialog({super.key});
 
@@ -11,32 +13,26 @@ class EqualizerDialog extends StatefulWidget {
 
 class _EqualizerDialogState extends State<EqualizerDialog> {
   final player = AudioPlayerService.instance;
-  final List<String> _presets = [
-    'Hi-Fi Warm',
-    'Bass Boost',
-    'Vocal Clarity',
-    'Acoustic Studio',
-    'Electronic Club',
-    'Flat Linear',
-  ];
-
-  final Map<String, List<double>> _presetBands = {
-    'Hi-Fi Warm': [3.0, 2.0, 0.0, 1.5, 3.5],
-    'Bass Boost': [6.0, 4.5, 1.0, 0.0, 0.0],
-    'Vocal Clarity': [-1.0, 1.0, 4.5, 3.0, 1.0],
-    'Acoustic Studio': [2.0, 1.0, 2.0, 3.0, 4.0],
-    'Electronic Club': [5.0, 3.0, 0.0, 2.5, 4.5],
-    'Flat Linear': [0.0, 0.0, 0.0, 0.0, 0.0],
-  };
-
-  late List<double> _currentBands;
+  EqualizerState? _state;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    final current = player.equalizerPreset.value;
-    _currentBands = List<double>.from(_presetBands[current] ?? [0.0, 0.0, 0.0, 0.0, 0.0]);
+    _refresh();
   }
+
+  Future<void> _refresh() async {
+    final state = await player.equalizerState();
+    if (!mounted) return;
+    setState(() {
+      _state = state;
+      _loading = false;
+    });
+  }
+
+  String _formatHz(double hz) =>
+      hz >= 1000 ? '${(hz / 1000).toStringAsFixed(hz >= 10000 ? 0 : 1)}k' : hz.toStringAsFixed(0);
 
   @override
   Widget build(BuildContext context) {
@@ -53,86 +49,58 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
-                  children: [
-                    Icon(Icons.tune_rounded, color: AppTheme.accentAmber, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'DSP Equalizer',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textPrimary,
-                      ),
-                    ),
-                  ],
+                const Icon(Icons.tune_rounded, color: AppTheme.accentAmber, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Equalizer',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+                  ),
                 ),
-                IconButton(
-                  iconSize: 20,
-                  icon: const Icon(Icons.close_rounded, color: AppTheme.textSecondary),
-                  onPressed: () => Navigator.pop(context),
+                ValueListenableBuilder<bool>(
+                  valueListenable: player.equalizerEnabled,
+                  builder: (context, enabled, _) => Switch(
+                    key: const ValueKey('equalizer_switch'),
+                    value: enabled,
+                    activeThumbColor: AppTheme.accentAmber,
+                    onChanged: _state == null ? null : (v) => player.setEqualizerEnabled(v),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-
-            // Presets Wrap
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _presets.map((preset) {
-                final isSelected = player.equalizerPreset.value == preset;
-                return ChoiceChip(
-                  label: Text(preset),
-                  selected: isSelected,
-                  selectedColor: AppTheme.accentAmber,
-                  backgroundColor: AppTheme.bgSurface,
-                  labelStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? const Color(0xFF1B1713) : AppTheme.textPrimary,
-                  ),
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() {
-                        player.setEqualizerPreset(preset);
-                        _currentBands = List<double>.from(_presetBands[preset]!);
-                      });
-                    }
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-
-            // 5-Band Sliders
-            SizedBox(
-              height: 140,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildBandSlider(0, '60Hz', _currentBands[0]),
-                  _buildBandSlider(1, '230Hz', _currentBands[1]),
-                  _buildBandSlider(2, '910Hz', _currentBands[2]),
-                  _buildBandSlider(3, '3.6kHz', _currentBands[3]),
-                  _buildBandSlider(4, '14kHz', _currentBands[4]),
-                ],
+            const SizedBox(height: 12),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (!player.equalizerSupported || _state == null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  !player.equalizerSupported
+                      ? 'The equalizer is available on Android.'
+                      : 'Start playing a song to adjust the equalizer.',
+                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                ),
+              )
+            else
+              ValueListenableBuilder<bool>(
+                valueListenable: player.equalizerEnabled,
+                builder: (context, enabled, _) => Opacity(
+                  opacity: enabled ? 1 : 0.45,
+                  child: IgnorePointer(ignoring: !enabled, child: _buildControls(_state!)),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-
-            Center(
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text(
-                  'APPLY FILTER',
-                  style: TextStyle(
-                    color: AppTheme.accentAmber,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
-                  ),
+                  'DONE',
+                  style: TextStyle(color: AppTheme.accentAmber, fontWeight: FontWeight.w700, letterSpacing: 1.0),
                 ),
               ),
             ),
@@ -142,44 +110,90 @@ class _EqualizerDialogState extends State<EqualizerDialog> {
     );
   }
 
-  Widget _buildBandSlider(int index, String freq, double value) {
+  Widget _buildControls(EqualizerState state) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '${value >= 0 ? "+" : ""}${value.toStringAsFixed(1)}dB',
-          style: const TextStyle(
-            fontSize: 10,
-            fontFamily: 'monospace',
-            color: AppTheme.textMuted,
+        ValueListenableBuilder<String>(
+          valueListenable: player.equalizerPreset,
+          builder: (context, current, _) => Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final preset in AudioPlayerService.equalizerPresets.keys)
+                ChoiceChip(
+                  label: Text(preset),
+                  selected: current == preset,
+                  selectedColor: AppTheme.accentAmber,
+                  backgroundColor: AppTheme.bgSurface,
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    fontWeight: current == preset ? FontWeight.w700 : FontWeight.w500,
+                    color: current == preset ? const Color(0xFF1B1713) : AppTheme.textPrimary,
+                  ),
+                  onSelected: (selected) async {
+                    if (!selected) return;
+                    await player.applyEqualizerPreset(preset);
+                    await _refresh();
+                  },
+                ),
+            ],
           ),
         ),
-        Expanded(
-          child: RotatedBox(
-            quarterTurns: 3,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 3,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-              ),
-              child: Slider(
-                value: value,
-                min: -6.0,
-                max: 6.0,
-                onChanged: (val) {
-                  setState(() {
-                    _currentBands[index] = val;
-                  });
-                },
-              ),
-            ),
-          ),
-        ),
-        Text(
-          freq,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.textSecondary,
+        const SizedBox(height: 20),
+        SizedBox(
+          height: 160,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              for (final band in state.bands)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        '${band.gainDb >= 0 ? "+" : ""}${band.gainDb.toStringAsFixed(1)}',
+                        style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: AppTheme.textMuted),
+                      ),
+                      Expanded(
+                        child: RotatedBox(
+                          quarterTurns: 3,
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                            ),
+                            child: Slider(
+                              value: band.gainDb.clamp(state.minDb, state.maxDb),
+                              min: state.minDb,
+                              max: state.maxDb,
+                              activeColor: AppTheme.accentAmber,
+                              onChanged: (val) {
+                                setState(() {
+                                  _state = EqualizerState(
+                                    minDb: state.minDb,
+                                    maxDb: state.maxDb,
+                                    bands: [
+                                      for (final b in state.bands)
+                                        b.index == band.index
+                                            ? EqualizerBandInfo(b.index, b.centerFrequencyHz, val)
+                                            : b,
+                                    ],
+                                  );
+                                });
+                              },
+                              onChangeEnd: (val) => player.setEqualizerBandGain(band.index, val),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _formatHz(band.centerFrequencyHz),
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         ),
       ],

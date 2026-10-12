@@ -35,6 +35,7 @@ class TrackListTile extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          key: ValueKey('track_${song.id}'),
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
           hoverColor: AppTheme.spotifyCardHighlight,
@@ -148,6 +149,7 @@ class TrackListTile extends StatelessWidget {
 
                 // Spotify Heart Button
                 IconButton(
+                  key: ValueKey('favorite_${song.id}'),
                   iconSize: 20,
                   splashRadius: 20,
                   padding: const EdgeInsets.all(8),

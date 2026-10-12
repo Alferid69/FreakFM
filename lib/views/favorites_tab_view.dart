@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/track_list_tile.dart';
 
 class FavoritesTabView extends StatelessWidget {
   final List<Song> songs;
-  final VoidCallback onSongsChanged;
 
   const FavoritesTabView({
     super.key,
     required this.songs,
-    required this.onSongsChanged,
   });
 
   @override
@@ -84,8 +83,7 @@ class FavoritesTabView extends StatelessWidget {
                                     isPlaying: isPlaying,
                                     onTap: () => player.playSong(song, contextQueue: favorites),
                                     onFavoriteToggle: () {
-                                      song.isFavorite = !song.isFavorite;
-                                      onSongsChanged();
+                                      LibraryService.instance.toggleFavorite(song);
                                     },
                                   );
                                 },
@@ -122,8 +120,7 @@ class FavoritesTabView extends StatelessWidget {
                                     isPlaying: isPlaying,
                                     onTap: () => player.playSong(song, contextQueue: topPlayed),
                                     onFavoriteToggle: () {
-                                      song.isFavorite = !song.isFavorite;
-                                      onSongsChanged();
+                                      LibraryService.instance.toggleFavorite(song);
                                     },
                                   );
                                 },

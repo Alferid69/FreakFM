@@ -74,7 +74,9 @@ class LyricsShareService {
     }
   }
 
-  /// Saves the captured PNG card directly to disk (Pictures / App directory)
+  /// Saves the captured PNG card. On Android it goes into the gallery
+  /// (Pictures/freak player) via MediaStore; elsewhere into Documents.
+  /// Returns a human-readable location, or null on failure.
   static Future<String?> saveLyricCardToDisk({
     required GlobalKey boundaryKey,
     required Song song,
@@ -82,25 +84,27 @@ class LyricsShareService {
     final bytes = await captureCardToPng(boundaryKey, pixelRatio: 3.0);
     if (bytes == null || bytes.isEmpty) return null;
 
+    final safeTitle = song.title.replaceAll(RegExp(r'[^\w\s\.-]'), '_').trim();
+    final fileName = 'freak_lyrics_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.png';
+
     try {
-      Directory? targetDir;
       if (!kIsWeb && Platform.isAndroid) {
-        targetDir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
-      } else {
-        targetDir = await getApplicationDocumentsDirectory();
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File(p.join(tempDir.path, fileName));
+        await tempFile.writeAsBytes(bytes);
+        final saved = await _channel.invokeMethod<String>('saveImageToGallery', {
+          'filePath': tempFile.path,
+          'fileName': fileName,
+        });
+        return saved;
       }
 
-      final safeTitle = song.title.replaceAll(RegExp(r'[^\w\s\.-]'), '_').trim();
-      final filePath = p.join(
-        targetDir.path,
-        'freak_lyrics_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.png',
-      );
-
-      final file = File(filePath);
-      await file.writeAsBytes(bytes);
+      final targetDir = await getApplicationDocumentsDirectory();
+      final filePath = p.join(targetDir.path, fileName);
+      await File(filePath).writeAsBytes(bytes);
       return filePath;
     } catch (e) {
-      debugPrint('Error saving lyric card to disk: $e');
+      debugPrint('Error saving lyric card: $e');
       return null;
     }
   }

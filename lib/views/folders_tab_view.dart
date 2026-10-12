@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import '../models/song.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/track_list_tile.dart';
 
 class FoldersTabView extends StatefulWidget {
   final List<Song> songs;
-  final VoidCallback onSongsChanged;
 
   const FoldersTabView({
     super.key,
     required this.songs,
-    required this.onSongsChanged,
   });
 
   @override
@@ -19,27 +19,54 @@ class FoldersTabView extends StatefulWidget {
 }
 
 class _FoldersTabViewState extends State<FoldersTabView> {
-  String? _selectedFolder;
+  String? _selectedFolderPath;
+
+  Future<void> _confirmHideFolder(FolderGroup group) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.spotifyCardElevated,
+        title: Text('Hide "${group.folderName}"?', style: const TextStyle(color: AppTheme.textPrimary)),
+        content: Text(
+          '${group.songs.length} tracks in\n${group.folderPath}\nwill be removed from your library and skipped by future scans. '
+          'You can bring it back from Library folders.',
+          style: const TextStyle(color: AppTheme.spotifyLightGrey, fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hide', style: TextStyle(color: AppTheme.spotifyGreen)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await LibraryService.instance.hideFolder(group.folderPath);
+      if (mounted) setState(() => _selectedFolderPath = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final Map<String, List<Song>> folderMap = {};
     for (final song in widget.songs) {
-      folderMap.putIfAbsent(song.folder, () => []).add(song);
+      folderMap.putIfAbsent(song.folderPath, () => []).add(song);
     }
 
     final folderGroups = folderMap.entries.map((entry) {
+      final name = p.basename(entry.key);
       return FolderGroup(
-        folderPath: entry.value.first.filePath,
-        folderName: entry.key,
+        folderPath: entry.key,
+        folderName: name.isEmpty ? entry.value.first.folder : name,
         songs: entry.value,
       );
     }).toList()
-      ..sort((a, b) => a.folderName.compareTo(b.folderName));
+      ..sort((a, b) => a.folderName.toLowerCase().compareTo(b.folderName.toLowerCase()));
 
-    if (_selectedFolder != null && folderMap.containsKey(_selectedFolder)) {
-      final selectedSongs = folderMap[_selectedFolder]!;
-      return _buildFolderSongsView(_selectedFolder!, selectedSongs);
+    if (_selectedFolderPath != null && folderMap.containsKey(_selectedFolderPath)) {
+      final group = folderGroups.firstWhere((g) => g.folderPath == _selectedFolderPath);
+      return _buildFolderSongsView(group);
     }
 
     return ListView.builder(
@@ -63,7 +90,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
               borderRadius: BorderRadius.circular(16),
               onTap: () {
                 setState(() {
-                  _selectedFolder = group.folderName;
+                  _selectedFolderPath = group.folderPath;
                 });
               },
               child: Padding(
@@ -110,8 +137,20 @@ class _FoldersTabViewState extends State<FoldersTabView> {
                               color: AppTheme.textSecondary,
                             ),
                           ),
+                          const SizedBox(height: 2),
+                          Text(
+                            group.folderPath,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                          ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.visibility_off_outlined, color: AppTheme.textMuted, size: 22),
+                      onPressed: () => _confirmHideFolder(group),
+                      tooltip: 'Hide folder from library',
                     ),
                     IconButton(
                       icon: const Icon(Icons.play_circle_fill_rounded, color: AppTheme.accentAmber, size: 36),
@@ -130,8 +169,10 @@ class _FoldersTabViewState extends State<FoldersTabView> {
     );
   }
 
-  Widget _buildFolderSongsView(String folderName, List<Song> folderSongs) {
+  Widget _buildFolderSongsView(FolderGroup group) {
     final player = AudioPlayerService.instance;
+    final folderName = group.folderName;
+    final folderSongs = group.songs;
 
     return Column(
       children: [
@@ -146,7 +187,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
-                onPressed: () => setState(() => _selectedFolder = null),
+                onPressed: () => setState(() => _selectedFolderPath = null),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -169,6 +210,11 @@ class _FoldersTabViewState extends State<FoldersTabView> {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.visibility_off_outlined, color: AppTheme.textMuted),
+                onPressed: () => _confirmHideFolder(group),
+                tooltip: 'Hide folder from library',
               ),
               ElevatedButton.icon(
                 onPressed: () {
@@ -208,8 +254,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
                         isPlaying: isPlaying,
                         onTap: () => player.playSong(song, contextQueue: folderSongs),
                         onFavoriteToggle: () {
-                          song.isFavorite = !song.isFavorite;
-                          widget.onSongsChanged();
+                          LibraryService.instance.toggleFavorite(song);
                         },
                       );
                     },

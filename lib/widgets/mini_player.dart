@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_service.dart';
 import '../theme/app_theme.dart';
 import 'full_player_sheet.dart';
 import 'lyrics_view.dart';
@@ -27,6 +28,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
   Widget build(BuildContext context) {
     final player = AudioPlayerService.instance;
 
+    // Position ticks several times a second, so only the progress bar and the
+    // time label listen to it; the rest rebuilds on song/play-state changes.
     return ValueListenableBuilder<Song?>(
       valueListenable: player.currentSong,
       builder: (context, song, _) {
@@ -35,74 +38,44 @@ class _MiniPlayerState extends State<MiniPlayer> {
         return ValueListenableBuilder<bool>(
           valueListenable: player.isPlaying,
           builder: (context, isPlaying, _) {
-            return ValueListenableBuilder<Duration>(
-              valueListenable: player.duration,
-              builder: (context, totalDur, _) {
-                return ValueListenableBuilder<Duration>(
-                  valueListenable: player.position,
-                  builder: (context, position, _) {
-                    final rawTotalMs = totalDur.inMilliseconds > 0
-                        ? totalDur.inMilliseconds
-                        : (song.durationMs > 0 ? song.durationMs : 1);
-                    final totalMs = rawTotalMs > position.inMilliseconds
-                        ? rawTotalMs
-                        : position.inMilliseconds;
-                    final progress =
-                        (position.inMilliseconds / totalMs).clamp(0.0, 1.0);
-
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 280),
-                      curve: Curves.easeOutCubic,
-                      height: _selectedTab == 1 ? 280 : null,
-                      margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.spotifyCardElevated,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF2E2E2E), width: 0.8),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.45),
-                            offset: const Offset(0, 4),
-                            blurRadius: 16,
+            return ValueListenableBuilder<int>(
+              valueListenable: LibraryService.instance.revision,
+              builder: (context, _, _) {
+                return AnimatedContainer(
+                  key: const ValueKey('mini_player'),
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  height: _selectedTab == 1 ? 280 : null,
+                  margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.spotifyCardElevated,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF2E2E2E), width: 0.8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        offset: const Offset(0, 4),
+                        blurRadius: 16,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_selectedTab == 0)
+                          _buildPlayerContent(context, song, isPlaying, player)
+                        else ...[
+                          _buildMiniTabBar(context, song),
+                          Expanded(
+                            child: _buildLyricsContent(context, song, isPlaying, player),
                           ),
                         ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Tab Body
-                            if (_selectedTab == 0)
-                              _buildPlayerContent(
-                                  context, song, isPlaying, player)
-                            else ...[
-                              _buildMiniTabBar(context, song),
-                              Expanded(
-                                child: _buildLyricsContent(
-                                  context,
-                                  song,
-                                  isPlaying,
-                                  player,
-                                  totalMs,
-                                  position,
-                                ),
-                              ),
-                            ],
-
-                            // Razor-thin Spotify Green Progress Bar at Bottom
-                            LinearProgressIndicator(
-                              value: progress,
-                              minHeight: 2.2,
-                              backgroundColor: const Color(0xFF383838),
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                  AppTheme.spotifyGreen),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+                        _MiniProgressBar(song: song),
+                      ],
+                    ),
+                  ),
                 );
               },
             );
@@ -336,8 +309,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                     : AppTheme.spotifyLightGrey,
               ),
               onPressed: () {
-                song.isFavorite = !song.isFavorite;
-                setState(() {});
+                LibraryService.instance.toggleFavorite(song);
               },
             ),
 
@@ -393,8 +365,6 @@ class _MiniPlayerState extends State<MiniPlayer> {
     Song song,
     bool isPlaying,
     AudioPlayerService player,
-    int totalMs,
-    Duration position,
   ) {
     return Column(
       children: [
@@ -468,15 +438,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               const SizedBox(width: 10),
 
               // Position / Total Time Label
-              Text(
-                '${_formatDuration(position)} / ${_formatDuration(Duration(milliseconds: totalMs))}',
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  color: AppTheme.spotifyLightGrey,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              _PositionLabel(song: song, format: _formatDuration),
               const Spacer(),
 
               // Volume Controller
@@ -499,8 +461,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                       : AppTheme.spotifyLightGrey,
                 ),
                 onPressed: () {
-                  song.isFavorite = !song.isFavorite;
-                  setState(() {});
+                  LibraryService.instance.toggleFavorite(song);
                 },
               ),
             ],
@@ -604,6 +565,75 @@ class _SpinningVinylWidgetState extends State<_SpinningVinylWidget>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Listens to playback position on its own so the rest of the mini player
+/// doesn't rebuild on every tick.
+class _PositionListener extends StatelessWidget {
+  final Song song;
+  final Widget Function(BuildContext context, Duration position, int totalMs) builder;
+
+  const _PositionListener({required this.song, required this.builder});
+
+  @override
+  Widget build(BuildContext context) {
+    final player = AudioPlayerService.instance;
+    return ValueListenableBuilder<Duration>(
+      valueListenable: player.duration,
+      builder: (context, totalDur, _) {
+        return ValueListenableBuilder<Duration>(
+          valueListenable: player.position,
+          builder: (context, position, _) {
+            final rawTotalMs = totalDur.inMilliseconds > 0
+                ? totalDur.inMilliseconds
+                : (song.durationMs > 0 ? song.durationMs : 1);
+            final totalMs = rawTotalMs > position.inMilliseconds ? rawTotalMs : position.inMilliseconds;
+            return builder(context, position, totalMs);
+          },
+        );
+      },
+    );
+  }
+}
+
+class _MiniProgressBar extends StatelessWidget {
+  final Song song;
+  const _MiniProgressBar({required this.song});
+
+  @override
+  Widget build(BuildContext context) {
+    return _PositionListener(
+      song: song,
+      builder: (context, position, totalMs) => LinearProgressIndicator(
+        value: (position.inMilliseconds / totalMs).clamp(0.0, 1.0),
+        minHeight: 2.2,
+        backgroundColor: const Color(0xFF383838),
+        valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.spotifyGreen),
+      ),
+    );
+  }
+}
+
+class _PositionLabel extends StatelessWidget {
+  final Song song;
+  final String Function(Duration) format;
+  const _PositionLabel({required this.song, required this.format});
+
+  @override
+  Widget build(BuildContext context) {
+    return _PositionListener(
+      song: song,
+      builder: (context, position, totalMs) => Text(
+        '${format(position)} / ${format(Duration(milliseconds: totalMs))}',
+        style: const TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 11,
+          color: AppTheme.spotifyLightGrey,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

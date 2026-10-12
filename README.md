@@ -6,7 +6,8 @@ A high-performance, Spotify-inspired offline music player for **Android** and **
 
 ## ✨ Features
 
-- **⚡ Sub-Second Storage Scanner**: Discovers and indexes 1,000+ local music tracks in under 1 second using background Dart isolates and MediaStore projections.
+- **⚡ Library Scanner**: Indexes your music folders (Music / Download by default, plus any folder you add) using MediaStore and a background-isolate tag reader. Audio stored by other apps (Quran readers, messengers, podcast apps), `.nomedia` folders, ringtones and recordings are skipped, and any folder can be hidden from the Folders tab.
+- **💾 Persistent library**: Favourites, play counts and learned durations are saved automatically and survive rescans.
 - **🎨 Impeccable Spotify Design**: Full Spotify dark obsidian theme (`#121212`), high-contrast typography, seamless mini player, and immersive full-screen hero player with a vinyl turntable toggle.
 - **🎤 Synchronized Lyrics**: Real-time auto-scrolling synced lyrics fetched from free sources (LRCLIB) with persistent offline disk caching.
 - **🖼️ Spotify Lyrics Sharing**:
@@ -16,14 +17,14 @@ A high-performance, Spotify-inspired offline music player for **Android** and **
   - Formatted text copying and direct 1-tap image download.
 - **🎧 Bluetooth & AirPods Hardware Controls**:
   - Full AVRCP media button support (single tap, double-click play/pause, next, previous).
-  - Explicit audio focus management (`AUDIOFOCUS_GAIN`) preventing conflicts with other background players.
+  - Audio focus handling: ducks/pauses for calls and other apps, and pauses when headphones are unplugged.
 - **🖼️ Embedded Album Artwork**:
   - Native Android `MediaMetadataRetriever` / `loadThumbnail` extraction with disk caching.
   - Broadcasts genuine track cover art to Android lock screens, notification controls, and Bluetooth car dashboards.
 - **🎛️ Hi-Fi Audio Suite**:
   - In-app volume control independent of system master volume.
-  - Equalizer presets (Bass Boost, Vocal Clarity, Electronic, Acoustic, Rock).
-  - Animated audio waveform visualizer and turntable mode.
+  - Real hardware equalizer on Android (presets + per-band sliders backed by `android.media.audiofx.Equalizer`).
+  - Decorative waveform animation and turntable mode.
 
 ---
 
@@ -37,7 +38,8 @@ A high-performance, Spotify-inspired offline music player for **Android** and **
 ## 🛠️ Tech Stack
 
 - **Framework**: Flutter 3.x / Dart 3.x
-- **Audio Engine**: `audioplayers` & `audio_service`
+- **Audio Engine**: `just_audio` (+ `just_audio_windows`), `audio_session`, `audio_service`
+- **Tags & Artwork**: `audio_metadata_reader`
 - **Native Android**: Kotlin, MediaStore API, AndroidX Media, FileProvider
 - **Storage & Cache**: `shared_preferences`, `path_provider`
 
@@ -73,6 +75,27 @@ flutter build apk --split-per-abi
 # Build Windows Release executable
 flutter build windows --release
 ```
+
+## 🧪 Tests
+
+```bash
+# Unit + widget tests (add --tags network to also hit the live lyrics API)
+flutter test --exclude-tags network
+
+# Integration tests: real scanning, playback, search and persistence
+flutter test integration_test -d windows        # or -d <android-device-id>
+```
+
+## 🤖 CI & Releases
+
+- **CI** (`.github/workflows/ci.yml`) runs on every push/PR to `main`: analyze, unit tests, and the integration suite on an Android emulator and on Windows.
+- **Release** (`.github/workflows/release.yml`) runs when a `v*` tag is pushed (or manually). After the full test suite passes it builds one APK per ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`) and attaches them to a GitHub Release.
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+To sign releases with your own key, add the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Without them the APKs are debug-signed (installable, not Play Store-ready).
 
 ---
 

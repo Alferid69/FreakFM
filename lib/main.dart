@@ -8,16 +8,19 @@ import 'services/lyrics_service.dart';
 import 'theme/app_theme.dart';
 import 'views/home_view.dart';
 
-void main() async {
+bool _initialized = false;
+
+/// One-time app setup (lyrics cache, system UI, media session). Safe to call
+/// more than once, which the integration tests rely on.
+Future<void> initializeApp() async {
+  if (_initialized) return;
+  _initialized = true;
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize offline persistent lyrics cache
-  try {
-    await LyricsService.instance.initCache();
-  } catch (_) {}
+  await LyricsService.instance.initCache();
 
-  // Edge-to-edge immersive system navigation on mobile platforms
-  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+  final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  if (isMobile) {
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -29,32 +32,30 @@ void main() async {
     );
   }
 
-  // Initialize AudioService for background playback and notification panel on mobile platforms
-  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
+  // Background playback + notification / lock screen / headset controls.
+  if (isMobile || (!kIsWeb && Platform.isMacOS)) {
     try {
       await AudioService.init(
         builder: () => FreakAudioHandler(),
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.example.freak_shit_show.channel.audio',
           androidNotificationChannelName: 'freak player',
-          androidNotificationChannelDescription: 'Background audio playback and controls for freak player',
+          androidNotificationChannelDescription: 'Playback controls for freak player',
           androidNotificationIcon: 'mipmap/ic_launcher',
-          androidShowNotificationBadge: true,
-          androidStopForegroundOnPause: false,
+          // Lets the notification be swiped away while paused instead of
+          // pinning a foreground service forever.
+          androidStopForegroundOnPause: true,
           androidResumeOnClick: true,
         ),
       );
-
-      if (Platform.isAndroid) {
-        try {
-          await AudioService.androidForceEnableMediaButtons();
-        } catch (_) {}
-      }
     } catch (e) {
       debugPrint('AudioService init skipped or failed: $e');
     }
   }
+}
 
+void main() async {
+  await initializeApp();
   runApp(const FreakMusicPlayerApp());
 }
 

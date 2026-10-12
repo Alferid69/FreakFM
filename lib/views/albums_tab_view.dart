@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../services/audio_player_service.dart';
+import '../services/library_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_artwork_widget.dart';
 import '../widgets/track_list_tile.dart';
 
 class AlbumsTabView extends StatefulWidget {
   final List<Song> songs;
-  final VoidCallback onSongsChanged;
 
   const AlbumsTabView({
     super.key,
     required this.songs,
-    required this.onSongsChanged,
   });
 
   @override
@@ -224,8 +223,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
                         isPlaying: isPlaying,
                         onTap: () => player.playSong(song, contextQueue: albumSongs),
                         onFavoriteToggle: () {
-                          song.isFavorite = !song.isFavorite;
-                          widget.onSongsChanged();
+                          LibraryService.instance.toggleFavorite(song);
                         },
                       );
                     },

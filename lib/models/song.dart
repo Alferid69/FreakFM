@@ -1,3 +1,5 @@
+import 'package:path/path.dart' as p;
+
 class Song {
   final String id;
   final String title;
@@ -9,12 +11,11 @@ class Song {
   final String folder;
   final String genre;
   final int? year;
-  final int dateAdded;
+  int dateAdded;
   bool isFavorite;
   int playCount;
-  final bool isSample;
-  final int bitrate; // kbps
-  final int sampleRate; // Hz
+  final int bitrate; // kbps, 0 when unknown
+  final int sampleRate; // Hz, 0 when unknown
   String? artworkPath;
   final int? albumId;
   final String? contentUri;
@@ -33,13 +34,24 @@ class Song {
     required this.dateAdded,
     this.isFavorite = false,
     this.playCount = 0,
-    this.isSample = false,
-    this.bitrate = 320,
-    this.sampleRate = 44100,
+    this.bitrate = 0,
+    this.sampleRate = 0,
     this.artworkPath,
     this.albumId,
     this.contentUri,
   });
+
+  /// Directory that contains the file, used to group and hide folders.
+  /// Falls back to the folder name for content:// entries with no real path.
+  String get folderPath {
+    if (filePath.isEmpty || filePath.startsWith('content://')) return folder;
+    return p.dirname(filePath);
+  }
+
+  String get extension {
+    final ext = p.extension(filePath).replaceFirst('.', '').toUpperCase();
+    return ext.isEmpty ? 'AUDIO' : ext;
+  }
 
   String get formattedDuration {
     final totalSeconds = (durationMs / 1000).round();
@@ -59,11 +71,15 @@ class Song {
   }
 
   String get qualityBadge {
-    final ext = filePath.split('.').last.toUpperCase();
-    if (ext == 'FLAC' || ext == 'WAV') {
+    final ext = extension;
+    final isLossless = ext == 'FLAC' || ext == 'WAV' || ext == 'AIFF';
+    if (isLossless && sampleRate > 0) {
       return '$ext • ${(sampleRate / 1000).toStringAsFixed(1)}kHz';
     }
-    return '$ext • ${bitrate}kbps';
+    if (bitrate > 0) {
+      return '$ext • ${bitrate}kbps';
+    }
+    return ext;
   }
 
   Map<String, dynamic> toJson() => {
@@ -80,7 +96,6 @@ class Song {
         'dateAdded': dateAdded,
         'isFavorite': isFavorite,
         'playCount': playCount,
-        'isSample': isSample,
         'bitrate': bitrate,
         'sampleRate': sampleRate,
         'artworkPath': artworkPath,
@@ -97,14 +112,13 @@ class Song {
         filePath: json['filePath'] as String? ?? '',
         fileSize: (json['fileSize'] as num?)?.toInt() ?? 0,
         folder: json['folder'] as String? ?? 'Default',
-        genre: json['genre'] as String? ?? 'General',
-        year: json['year'] as int?,
+        genre: json['genre'] as String? ?? 'Music',
+        year: (json['year'] as num?)?.toInt(),
         dateAdded: (json['dateAdded'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
         isFavorite: json['isFavorite'] as bool? ?? false,
         playCount: (json['playCount'] as num?)?.toInt() ?? 0,
-        isSample: json['isSample'] as bool? ?? false,
-        bitrate: (json['bitrate'] as num?)?.toInt() ?? 320,
-        sampleRate: (json['sampleRate'] as num?)?.toInt() ?? 44100,
+        bitrate: (json['bitrate'] as num?)?.toInt() ?? 0,
+        sampleRate: (json['sampleRate'] as num?)?.toInt() ?? 0,
         artworkPath: json['artworkPath'] as String?,
         albumId: (json['albumId'] as num?)?.toInt(),
         contentUri: json['contentUri'] as String?,

@@ -106,7 +106,7 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
                                   _buildHeroArtwork(song, isPlaying),
                                   const SizedBox(height: 20),
 
-                                  // Real-time Frequency Spectrum Wave
+                                  // Decorative spectrum animation (not driven by the audio signal)
                                   FrequencySpectrumWidget(isPlaying: isPlaying, height: 26),
                                   const SizedBox(height: 18),
 
@@ -960,28 +960,35 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              ValueListenableBuilder<String>(
-                valueListenable: player.equalizerPreset,
-                builder: (context, preset, _) {
-                  return TextButton.icon(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => const EqualizerDialog(),
-                      );
-                    },
-                    icon: const Icon(Icons.tune_rounded, size: 16, color: AppTheme.spotifyGreen),
-                    label: Text(
-                      'DSP FX: $preset',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.spotifyWhite,
+              if (player.equalizerSupported)
+                AnimatedBuilder(
+                  animation: Listenable.merge([player.equalizerPreset, player.equalizerEnabled]),
+                  builder: (context, _) {
+                    final label = player.equalizerEnabled.value
+                        ? 'EQ: ${player.equalizerPreset.value}'
+                        : 'EQ: Off';
+                    return TextButton.icon(
+                      key: const ValueKey('equalizer_button'),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => const EqualizerDialog(),
+                        );
+                      },
+                      icon: const Icon(Icons.tune_rounded, size: 16, color: AppTheme.spotifyGreen),
+                      label: Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.spotifyWhite,
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
+                    );
+                  },
+                )
+              else
+                const SizedBox.shrink(),
               Text(
                 'FOLDER: ${player.currentSong.value?.folder ?? "Default"}',
                 style: const TextStyle(

@@ -4,7 +4,7 @@ import '../models/song.dart';
 import '../services/artwork_service.dart';
 import '../theme/app_theme.dart';
 
-class SongArtworkWidget extends StatelessWidget {
+class SongArtworkWidget extends StatefulWidget {
   final Song song;
   final double size;
   final double borderRadius;
@@ -25,25 +25,51 @@ class SongArtworkWidget extends StatelessWidget {
   });
 
   @override
+  State<SongArtworkWidget> createState() => _SongArtworkWidgetState();
+}
+
+class _SongArtworkWidgetState extends State<SongArtworkWidget> {
+  String? _path;
+
+  Song get song => widget.song;
+  double get size => widget.size;
+  double get borderRadius => widget.borderRadius;
+  bool get isPlaying => widget.isPlaying;
+  BoxFit get fit => widget.fit;
+  Widget? get fallback => widget.fallback;
+  bool get showPlayingBadge => widget.showPlayingBadge;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant SongArtworkWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.song.id != widget.song.id) _resolve();
+  }
+
+  /// Looks the artwork up once per song; the service caches hits and misses,
+  /// so rebuilds never touch the disk.
+  void _resolve() {
+    final service = ArtworkService.instance;
+    final requested = widget.song;
+    _path = service.peek(requested);
+    if (service.isResolved(requested)) return;
+    service.getArtworkPath(requested).then((path) {
+      if (mounted && widget.song.id == requested.id && path != _path) {
+        setState(() => _path = path);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // 1. Direct path exists
-    if (song.artworkPath != null && File(song.artworkPath!).existsSync()) {
-      return _buildImageContainer(song.artworkPath!);
-    }
-
-    // 2. Fetch asynchronously from ArtworkService
-    return FutureBuilder<String?>(
-      future: ArtworkService.instance.getArtworkPath(song),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done &&
-            snapshot.data != null &&
-            File(snapshot.data!).existsSync()) {
-          return _buildImageContainer(snapshot.data!);
-        }
-
-        return fallback ?? _buildPlaceholder();
-      },
-    );
+    final path = _path;
+    if (path != null) return _buildImageContainer(path);
+    return fallback ?? _buildPlaceholder();
   }
 
   Widget _buildImageContainer(String path) {

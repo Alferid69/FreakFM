@@ -9,7 +9,7 @@ class StorageCacheService {
   static const String _cacheFileName = 'freak_music_cache_v2.json';
   static const String _playlistsFileName = 'freak_playlists_v1.json';
   static const String _prefCustomDirs = 'pref_custom_scan_dirs';
-  static const String _prefLastBenchmarkMs = 'pref_last_benchmark_ms';
+  static const String _prefExcludedDirs = 'pref_excluded_scan_dirs';
 
   static Future<File> _getCacheFile() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -21,7 +21,14 @@ class StorageCacheService {
     return File('${dir.path}/$_playlistsFileName');
   }
 
-  /// Blazing-fast cache reader: reads 1000 songs in ~10-20ms!
+  /// Writes [content] to a sibling temp file and renames it over [file], so a
+  /// crash or kill mid-write never leaves a truncated/corrupt cache behind.
+  static Future<void> writeAtomic(File file, String content) async {
+    final tmp = File('${file.path}.tmp');
+    await tmp.writeAsString(content, flush: true);
+    await tmp.rename(file.path);
+  }
+
   static Future<List<Song>?> loadCachedSongs() async {
     try {
       final file = await _getCacheFile();
@@ -33,7 +40,8 @@ class StorageCacheService {
       final decoded = jsonDecode(content) as List<dynamic>;
       return decoded
           .map((item) => Song.fromJson(item as Map<String, dynamic>))
-          .where((song) => !song.isSample)
+          // Drop entries left over from the old synthetic benchmark library.
+          .where(_isRealSong)
           .toList();
     } catch (e) {
       debugPrint('Error loading cached songs: $e');
@@ -41,20 +49,18 @@ class StorageCacheService {
     }
   }
 
-  /// Saves songs cache to disk asynchronously (excludes test/sample tracks)
+  static bool _isRealSong(Song song) => song.id.isNotEmpty && !song.id.startsWith('bench_track_');
+
   static Future<void> saveCachedSongs(List<Song> songs) async {
     try {
       final file = await _getCacheFile();
-      final realSongs = songs.where((s) => !s.isSample).toList();
-      final jsonList = realSongs.map((s) => s.toJson()).toList();
-      final content = jsonEncode(jsonList);
-      await file.writeAsString(content, flush: false);
+      final content = jsonEncode(songs.map((s) => s.toJson()).toList());
+      await writeAtomic(file, content);
     } catch (e) {
       debugPrint('Error saving cached songs: $e');
     }
   }
 
-  /// Clears existing songs cache file
   static Future<void> clearCache() async {
     try {
       final file = await _getCacheFile();
@@ -66,7 +72,6 @@ class StorageCacheService {
     }
   }
 
-  /// Loads saved playlists
   static Future<List<Playlist>> loadPlaylists() async {
     try {
       final file = await _getPlaylistsFile();
@@ -83,38 +88,34 @@ class StorageCacheService {
     }
   }
 
-  /// Saves playlists
   static Future<void> savePlaylists(List<Playlist> playlists) async {
     try {
       final file = await _getPlaylistsFile();
-      final jsonList = playlists.map((p) => p.toJson()).toList();
-      await file.writeAsString(jsonEncode(jsonList), flush: false);
+      await writeAtomic(file, jsonEncode(playlists.map((p) => p.toJson()).toList()));
     } catch (e) {
       debugPrint('Error saving playlists: $e');
     }
   }
 
-  /// Saves custom scanned directories
+  /// Extra folders the user added to the library.
   static Future<void> saveCustomDirectories(List<String> dirs) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_prefCustomDirs, dirs);
   }
 
-  /// Loads custom scanned directories
   static Future<List<String>> loadCustomDirectories() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getStringList(_prefCustomDirs) ?? [];
   }
 
-  /// Saves the last recorded benchmark duration in milliseconds
-  static Future<void> saveLastBenchmarkMs(int ms) async {
+  /// Folders the user hid from the library; nothing below them is indexed.
+  static Future<void> saveExcludedDirectories(List<String> dirs) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_prefLastBenchmarkMs, ms);
+    await prefs.setStringList(_prefExcludedDirs, dirs);
   }
 
-  /// Gets the last recorded benchmark duration
-  static Future<int?> loadLastBenchmarkMs() async {
+  static Future<List<String>> loadExcludedDirectories() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_prefLastBenchmarkMs);
+    return prefs.getStringList(_prefExcludedDirs) ?? [];
   }
 }
