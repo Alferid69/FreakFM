@@ -205,7 +205,7 @@ class MainActivity : AudioServiceActivity() {
         val songList = mutableListOf<Map<String, Any?>>()
         val uri: Uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
 
-        val projection = mutableListOf(
+        val baseProjection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
@@ -215,30 +215,31 @@ class MainActivity : AudioServiceActivity() {
             MediaStore.Audio.Media.SIZE,
             MediaStore.Audio.Media.DATE_ADDED,
             MediaStore.Audio.Media.ALBUM_ID,
-            MediaStore.Audio.Media.YEAR,
         )
         val hasGenreColumn = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-        if (hasGenreColumn) {
-            projection.add(MediaStore.Audio.Media.GENRE)
-            projection.add(MediaStore.Audio.Media.BITRATE)
-        }
+        val extendedProjection = baseProjection + arrayOf(MediaStore.Audio.Media.YEAR) +
+            (if (hasGenreColumn) arrayOf(MediaStore.Audio.Media.GENRE, MediaStore.Audio.Media.BITRATE) else emptyArray())
 
-        // Only real music: no ringtones, alarms, notification sounds, pending
-        // or trashed items, and nothing tiny. Folder-level filtering (other
-        // apps' storage, .nomedia, user-hidden folders) happens in Dart.
+        // Every audio file the system indexed that is music or at least 3 s
+        // long, anywhere on the device. Users hide unwanted folders in-app.
         val selection = buildString {
-            append("${MediaStore.Audio.Media.IS_MUSIC} != 0")
-            append(" AND ${MediaStore.Audio.Media.IS_RINGTONE} = 0")
-            append(" AND ${MediaStore.Audio.Media.IS_ALARM} = 0")
-            append(" AND ${MediaStore.Audio.Media.IS_NOTIFICATION} = 0")
+            append("(${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.DURATION} >= 3000)")
             append(" AND ${MediaStore.Audio.Media.SIZE} > 10000")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Skip files that are still being downloaded/written.
                 append(" AND ${MediaStore.Audio.Media.IS_PENDING} = 0")
             }
         }
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
-        contentResolver.query(uri, projection.toTypedArray(), selection, null, sortOrder)?.use { cursor ->
+        // Some OEM builds reject optional columns; fall back to the basics.
+        val result = try {
+            contentResolver.query(uri, extendedProjection, selection, null, sortOrder)
+        } catch (_: Exception) {
+            contentResolver.query(uri, baseProjection, selection, null, sortOrder)
+        }
+
+        result?.use { cursor ->
             val idCol = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
             val titleCol = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
             val artistCol = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)

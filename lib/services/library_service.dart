@@ -27,6 +27,13 @@ class LibraryService {
 
   static const Duration _saveDelay = Duration(milliseconds: 800);
 
+  /// Bump when scanning rules change so existing libraries rescan once.
+  static const int scannerVersion = 2;
+
+  /// True when the cached library was built by older scanning rules.
+  Future<bool> isScanOutdated() async =>
+      await StorageCacheService.loadScannerVersion() < scannerVersion;
+
   /// Loads the cached library. Returns false when there is no cache yet.
   Future<bool> loadFromCache() async {
     final cached = await StorageCacheService.loadCachedSongs();
@@ -59,6 +66,7 @@ class LibraryService {
 
       songs.value = merged;
       await flush();
+      await StorageCacheService.saveScannerVersion(scannerVersion);
       return ScanOutcome.success;
     } catch (e) {
       debugPrint('Library rescan failed: $e');

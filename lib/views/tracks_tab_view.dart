@@ -278,8 +278,8 @@ class _TracksTabViewState extends State<TracksTabView> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'freak player looks in your Music and Download folders. '
-              'Keep songs somewhere else? Add that folder.',
+              'Allow access to your music, then scan again. '
+              'Songs in an unusual place? Add that folder.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: AppTheme.spotifyLightGrey, height: 1.4),
             ),

@@ -1,7 +1,7 @@
 import '../models/song.dart';
 
-/// Pure, platform-independent rules that decide which audio files belong in
-/// the library and how scanned results are merged with saved user state.
+/// Pure, platform-independent library rules: path matching for hidden
+/// folders, stable ids, tag clean-up, and merging scans with saved state.
 /// Kept free of Flutter/IO so they can be unit tested directly.
 class LibraryRules {
   LibraryRules._();
@@ -24,31 +24,9 @@ class LibraryRules {
     return np == nr || np.startsWith('$nr/');
   }
 
-  /// Files inside another app's private/media storage (for example a Quran,
-  /// podcast or messenger app caching its own audio) are never library music.
-  static bool isAppPrivatePath(String path) {
-    final np = '${normalize(path)}/';
-    return np.contains('/android/data/') ||
-        np.contains('/android/media/') ||
-        np.contains('/android/obb/');
-  }
-
-  /// True when any directory segment (or the file itself) is hidden.
-  static bool isHiddenPath(String path) {
-    final segments = normalize(path).split('/');
-    return segments.any((s) => s.length > 1 && s.startsWith('.'));
-  }
-
-  /// Decides whether a file at [path] belongs in the library: it must sit
-  /// under one of the library [roots], not under an [excluded] folder, and
-  /// not inside app-private or hidden directories.
-  static bool isInLibrary(String path, List<String> roots, List<String> excluded) {
-    if (path.isEmpty || path.startsWith('content://')) return false;
-    if (isAppPrivatePath(path) || isHiddenPath(path)) return false;
-    if (!roots.any((r) => isUnder(path, r))) return false;
-    if (excluded.any((e) => isUnder(path, e))) return false;
-    return true;
-  }
+  /// True when [path] is inside a folder the user chose to hide.
+  static bool isExcluded(String path, List<String> excluded) =>
+      excluded.any((e) => isUnder(path, e));
 
   /// Stable id derived from the file path (64-bit FNV-1a). Unlike
   /// String.hashCode this is identical across runs and platforms.

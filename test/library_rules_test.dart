@@ -18,59 +18,27 @@ Song _song(String id, String path, {bool fav = false, int plays = 0, int added =
     );
 
 void main() {
-  const roots = ['/storage/emulated/0/Music', '/storage/emulated/0/Download'];
-
-  group('isInLibrary', () {
-    test('accepts files inside library roots', () {
-      expect(LibraryRules.isInLibrary('/storage/emulated/0/Music/a.mp3', roots, []), isTrue);
-      expect(LibraryRules.isInLibrary('/storage/emulated/0/Download/x/y.flac', roots, []), isTrue);
-    });
-
-    test('rejects audio cached by other apps (e.g. a Quran app)', () {
-      // Outside any library root.
+  group('hidden folders', () {
+    test('songs anywhere on the device are kept unless their folder is hidden', () {
+      expect(LibraryRules.isExcluded('/storage/emulated/0/Telegram/Telegram Audio/a.mp3', []), isFalse);
       expect(
-        LibraryRules.isInLibrary('/storage/emulated/0/quran_android/audio/5/001.mp3', roots, []),
-        isFalse,
-      );
-      // App-specific storage, even when nested under a root-like folder name.
-      expect(
-        LibraryRules.isInLibrary(
-          '/storage/emulated/0/Android/data/com.quran.labs.androidquran/files/audio/001001.mp3',
-          ['/storage/emulated/0'],
-          [],
+        LibraryRules.isExcluded(
+          '/storage/emulated/0/quran_android/audio/5/001.mp3',
+          ['/storage/emulated/0/quran_android'],
         ),
-        isFalse,
-      );
-      expect(
-        LibraryRules.isInLibrary(
-          '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio/a.opus',
-          ['/storage/emulated/0'],
-          [],
-        ),
-        isFalse,
-      );
-    });
-
-    test('rejects hidden folders and user-excluded folders', () {
-      expect(LibraryRules.isInLibrary('/storage/emulated/0/Music/.cache/a.mp3', roots, []), isFalse);
-      expect(
-        LibraryRules.isInLibrary(
-          '/storage/emulated/0/Download/Recitations/001.mp3',
-          roots,
-          ['/storage/emulated/0/Download/Recitations'],
-        ),
-        isFalse,
+        isTrue,
       );
     });
 
     test('folder prefix must match a whole path segment', () {
       expect(LibraryRules.isUnder('/music/rock2/a.mp3', '/music/rock'), isFalse);
       expect(LibraryRules.isUnder('/music/rock/a.mp3', '/music/rock'), isTrue);
+      expect(LibraryRules.isExcluded('/music/rock2/a.mp3', ['/music/rock']), isFalse);
     });
 
     test('works with Windows paths case-insensitively', () {
       expect(
-        LibraryRules.isInLibrary(r'C:\Users\me\Music\Album\song.mp3', [r'C:\Users\Me\music'], []),
+        LibraryRules.isExcluded(r'C:\Users\me\Music\Album\song.mp3', [r'C:\Users\Me\music']),
         isTrue,
       );
     });

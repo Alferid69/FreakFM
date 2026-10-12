@@ -41,6 +41,8 @@ class MusicScannerService {
     r'$recycle.bin',
     'system volume information',
     'build',
+    'data',
+    'obb',
   };
 
   /// Requests audio read access. Android 13+ uses READ_MEDIA_AUDIO, older
@@ -60,10 +62,10 @@ class MusicScannerService {
     return await Permission.audio.isGranted || await Permission.storage.isGranted;
   }
 
-  /// Built-in music locations. On Android only public music/download folders
-  /// are indexed, so audio cached by other apps (Quran readers, messengers,
-  /// podcast apps, ringtones, voice recorders) stays out of the library.
-  /// Anything else can be added explicitly with "Add folder".
+  /// Folders walked on disk in addition to Android's MediaStore index (which
+  /// already covers the whole device). Includes common download locations of
+  /// messaging/downloader apps and any SD card. Folders can be hidden by the
+  /// user; extra ones can be added with "Add folder".
   static Future<List<String>> defaultLibraryRoots() async {
     final candidates = <String>[];
 
@@ -71,10 +73,13 @@ class MusicScannerService {
       final userProfile = Platform.environment['USERPROFILE'];
       if (userProfile != null) {
         candidates.addAll([
+          p.join(userProfile, 'CrossDevice'),
+          p.join(userProfile, 'Documents'),
           p.join(userProfile, 'Music'),
           p.join(userProfile, 'Downloads'),
+          p.join(userProfile, 'Desktop'),
           p.join(userProfile, 'OneDrive', 'Music'),
-          p.join(userProfile, 'CrossDevice'),
+          p.join(userProfile, 'OneDrive', 'Documents'),
         ]);
       }
       for (final drive in ['D', 'E', 'F']) {
@@ -82,20 +87,40 @@ class MusicScannerService {
         candidates.add('$drive:\\Audio');
       }
     } else if (Platform.isAndroid) {
-      final volumes = <String>['/storage/emulated/0'];
+      candidates.addAll(const [
+        '/storage/emulated/0/Music',
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Downloads',
+        '/storage/emulated/0/Audio',
+        '/storage/emulated/0/Podcasts',
+        '/storage/emulated/0/Audiobooks',
+        '/storage/emulated/0/Recordings',
+        '/storage/emulated/0/Ringtones',
+        '/storage/emulated/0/Bluetooth',
+        '/storage/emulated/0/Telegram',
+        '/storage/emulated/0/Telegram/Telegram Audio',
+        '/storage/emulated/0/Android/media/org.telegram.messenger/Telegram/Telegram Audio',
+        '/storage/emulated/0/WhatsApp/Media/WhatsApp Audio',
+        '/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio',
+        '/storage/emulated/0/Snaptube/download/Audio',
+        '/storage/emulated/0/SnapTube',
+        '/storage/emulated/0/Vidmate',
+      ]);
+
+      // External SD cards / USB storage mounted under /storage.
       try {
         await for (final entity in Directory('/storage').list()) {
           final name = p.basename(entity.path);
           if (entity is Directory && name != 'emulated' && name != 'self') {
-            volumes.add(entity.path);
+            candidates.addAll([
+              entity.path,
+              '${entity.path}/Music',
+              '${entity.path}/Download',
+              '${entity.path}/Downloads',
+            ]);
           }
         }
       } catch (_) {}
-      for (final volume in volumes) {
-        for (final folder in const ['Music', 'Download', 'Downloads', 'Audio']) {
-          candidates.add('$volume/$folder');
-        }
-      }
     } else if (Platform.isLinux || Platform.isMacOS) {
       final home = Platform.environment['HOME'];
       if (home != null) {
@@ -105,7 +130,7 @@ class MusicScannerService {
 
     final roots = <String>[];
     for (final dir in candidates) {
-      if (await Directory(dir).exists()) roots.add(dir);
+      if (!roots.contains(dir) && await Directory(dir).exists()) roots.add(dir);
     }
     return roots;
   }
@@ -122,8 +147,9 @@ class MusicScannerService {
     return roots;
   }
 
-  /// Scans the library. On Android the MediaStore index is combined with a
-  /// filesystem walk; everything is filtered through [LibraryRules.isInLibrary].
+  /// Scans the library: on Android every audio file in the MediaStore index,
+  /// plus a filesystem walk of [roots] for anything not indexed. Only folders
+  /// the user chose to hide are left out.
   static Future<ScanResult> scanLibrary({
     List<String>? roots,
     List<String>? excluded,
@@ -137,12 +163,8 @@ class MusicScannerService {
 
     if (includeMediaStore && !kIsWeb && Platform.isAndroid) {
       final mediaStoreSongs = await queryAndroidMediaStore();
-      final nomediaCache = <String, bool>{};
       for (final song in mediaStoreSongs) {
-        if (LibraryRules.isInLibrary(song.filePath, roots, excluded) &&
-            !_hasNomediaAncestor(song.filePath, roots, nomediaCache)) {
-          songs.add(song);
-        }
+        if (!LibraryRules.isExcluded(song.filePath, excluded)) songs.add(song);
       }
     }
 
@@ -166,32 +188,6 @@ class MusicScannerService {
       songs: LibraryRules.dedupeByPath(songs),
       durationMs: stopwatch.elapsedMilliseconds,
     );
-  }
-
-  static bool _hasNomediaAncestor(String filePath, List<String> roots, Map<String, bool> cache) {
-    var dir = p.dirname(filePath);
-    final visited = <String>[];
-    bool result = false;
-    while (true) {
-      final cached = cache[dir];
-      if (cached != null) {
-        result = cached;
-        break;
-      }
-      visited.add(dir);
-      if (File(p.join(dir, '.nomedia')).existsSync()) {
-        result = true;
-        break;
-      }
-      final isRoot = roots.any((r) => LibraryRules.normalize(r) == LibraryRules.normalize(dir));
-      final parent = p.dirname(dir);
-      if (isRoot || parent == dir) break;
-      dir = parent;
-    }
-    for (final v in visited) {
-      cache[v] = result;
-    }
-    return result;
   }
 
   /// Queries Android's MediaStore via the native channel (runs off the UI
@@ -245,21 +241,13 @@ class MusicScannerService {
       final dir = queue.removeLast();
       final key = LibraryRules.normalize(dir.path);
       if (!visited.add(key)) continue;
-      if (LibraryRules.isAppPrivatePath(dir.path) ||
-          request.excluded.any((e) => LibraryRules.isUnder(dir.path, e))) {
-        continue;
-      }
+      if (LibraryRules.isExcluded(dir.path, request.excluded)) continue;
 
       List<FileSystemEntity> entities;
       try {
         entities = dir.listSync(followLinks: false);
       } catch (_) {
         continue; // unreadable folder
-      }
-
-      // Folders marked .nomedia are private to whatever app created them.
-      if (entities.any((e) => e is File && p.basename(e.path).toLowerCase() == '.nomedia')) {
-        continue;
       }
 
       for (final entity in entities) {

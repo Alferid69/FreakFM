@@ -16,8 +16,8 @@ A Spotify-inspired **offline** music player for **Android** and **Windows**, bui
 ## ✨ Features
 
 ### Library
-- **Scans only your music.** Music and Download folders by default, plus any folder you add. Audio that other apps keep for themselves (Quran readers, WhatsApp/Telegram voice notes, podcast apps), `.nomedia` folders, ringtones, alarms and notification sounds are skipped.
-- **You stay in control of folders.** Hide a folder from the Folders tab or a song's menu; manage added and hidden folders under **⋮ → Library folders**.
+- **Finds all your music.** Every song Android's media library knows about — anywhere on the phone or SD card — plus a scan of common folders (Music, Download, Telegram and WhatsApp audio, Snaptube/Vidmate, Bluetooth…) and any folder you add.
+- **You stay in control of folders.** Don't want something in your library (for example a Quran app's recitations or voice notes)? Hide that folder from the Folders tab or a song's ⋮ menu; manage added and hidden folders under **⋮ → Library folders**.
 - **Nothing gets lost.** Likes, play counts and real track durations are saved automatically and survive rescans.
 - **Accurate tags.** Title, artist, album, genre, year, duration, bitrate and cover art are read from the file (MP3, FLAC, M4A, OGG/Opus, WAV…), with sensible fallbacks from the file name.
 - Browse by **Songs, Folders, Artists, Albums, Genres and Favorites**, with search across all of them and five sort orders.

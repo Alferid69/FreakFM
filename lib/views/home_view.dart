@@ -84,6 +84,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     if (hasCache) {
       setState(() => _isLoading = false);
       _applySortAndFilter();
+      // Libraries built by older scanning rules refresh once, in the
+      // background, keeping likes and play counts.
+      if (await _library.isScanOutdated() && mounted) await _scanDeviceStorage();
       return;
     }
     await _scanDeviceStorage();
@@ -236,7 +239,8 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Only these folders are scanned. Audio stored by other apps is never included.',
+                      'All music on your device is found automatically, plus anything in these folders. '
+                      "Hide a folder (Folders tab or a song's ⋮ menu) to keep it out of your library.",
                       style: TextStyle(fontSize: 12.5, color: AppTheme.spotifyLightGrey),
                     ),
                     header('DEFAULT'),

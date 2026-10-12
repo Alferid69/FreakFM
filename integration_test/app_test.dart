@@ -70,24 +70,23 @@ void main() {
   });
 
   group('library scanner', () {
-    testWidgets('indexes music folders but skips other apps\' audio', (tester) async {
+    testWidgets('indexes every song in the scanned folders except hidden ones', (tester) async {
       final root = Directory(p.join(sandbox.path, 'scan'))..createSync();
       final music = p.join(root.path, 'Music');
       final download = p.join(root.path, 'Download');
 
-      // Should be found.
+      // Found, wherever they sit inside the scanned folders.
       writeTaggedWav(p.join(music, 'whatever.wav'),
           seconds: 1, title: 'Tagged Title', artist: 'Tagged Artist', album: 'Tagged Album', genre: 'hip hop');
       writeTaggedWav(p.join(music, 'Album', '01 - Some Artist - From Name.wav'), seconds: 1);
       writeTaggedWav(p.join(download, 'downloaded.wav'), seconds: 1, title: 'Downloaded');
-
-      // Must be skipped.
-      writeTaggedWav(p.join(root.path, 'quran_android', 'audio', '001.wav'), seconds: 1, title: 'Quran outside roots');
-      writeTaggedWav(p.join(music, 'Android', 'data', 'com.quran.labs.androidquran', '002.wav'),
-          seconds: 1, title: 'App private');
-      writeTaggedWav(p.join(music, '.hidden', 'h.wav'), seconds: 1, title: 'Hidden');
-      writeTaggedWav(p.join(music, 'AppCache', 'c.wav'), seconds: 1, title: 'Nomedia');
+      writeTaggedWav(p.join(download, 'Telegram Audio', 't.wav'), seconds: 1, title: 'From Telegram');
+      writeTaggedWav(p.join(music, 'AppCache', 'c.wav'), seconds: 1, title: 'Has nomedia');
       File(p.join(music, 'AppCache', '.nomedia')).createSync();
+
+      // Skipped: dot-folders, app "data" folders, and folders the user hid.
+      writeTaggedWav(p.join(music, '.hidden', 'h.wav'), seconds: 1, title: 'Dot folder');
+      writeTaggedWav(p.join(music, 'Android', 'data', 'com.example', '002.wav'), seconds: 1, title: 'App data');
       writeTaggedWav(p.join(download, 'Recitations', 'r.wav'), seconds: 1, title: 'User hidden');
 
       final result = await MusicScannerService.scanLibrary(
@@ -97,7 +96,7 @@ void main() {
       );
 
       final titles = result.songs.map((s) => s.title).toSet();
-      expect(titles, {'Tagged Title', 'From Name', 'Downloaded'});
+      expect(titles, {'Tagged Title', 'From Name', 'Downloaded', 'From Telegram', 'Has nomedia'});
 
       final tagged = result.songs.firstWhere((s) => s.title == 'Tagged Title');
       expect(tagged.artist, 'Tagged Artist');

@@ -10,6 +10,7 @@ class StorageCacheService {
   static const String _playlistsFileName = 'freak_playlists_v1.json';
   static const String _prefCustomDirs = 'pref_custom_scan_dirs';
   static const String _prefExcludedDirs = 'pref_excluded_scan_dirs';
+  static const String _prefScannerVersion = 'pref_scanner_version';
 
   static Future<File> _getCacheFile() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -117,5 +118,16 @@ class StorageCacheService {
   static Future<List<String>> loadExcludedDirectories() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getStringList(_prefExcludedDirs) ?? [];
+  }
+
+  /// Version of the scanning rules the cached library was built with.
+  static Future<int> loadScannerVersion() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_prefScannerVersion) ?? 1;
+  }
+
+  static Future<void> saveScannerVersion(int version) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_prefScannerVersion, version);
   }
 }
