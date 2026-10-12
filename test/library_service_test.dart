@@ -102,6 +102,12 @@ void main() {
     expect(leftovers, isEmpty);
   });
 
+  test('libraries from older scanner rules are flagged for one rescan', () async {
+    expect(await LibraryService.instance.isScanOutdated(), isTrue);
+    await StorageCacheService.saveScannerVersion(LibraryService.scannerVersion);
+    expect(await LibraryService.instance.isScanOutdated(), isFalse);
+  });
+
   test('equalizer presets interpolate on a log-frequency scale', () {
     final curve = AudioPlayerService.equalizerPresets['Bass Boost']!;
     expect(AudioPlayerService.presetGainAt(curve, 30), curve.first);

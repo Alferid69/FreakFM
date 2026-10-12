@@ -137,6 +137,9 @@ void main() {
           )!,
       ];
       await LibraryService.instance.setSongs(seeded);
+      // Mark the seeded library as current so launching the app doesn't
+      // replace it with a fresh device scan.
+      await StorageCacheService.saveScannerVersion(LibraryService.scannerVersion);
       await initializeApp();
     });
 

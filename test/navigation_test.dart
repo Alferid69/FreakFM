@@ -45,7 +45,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    // Mark the seeded library as built by the current scanner so the app
+    // doesn't replace it with a fresh device scan on launch.
+    SharedPreferences.setMockInitialValues({'pref_scanner_version': LibraryService.scannerVersion});
     PathProviderPlatform.instance = _FakePathProvider(Directory.systemTemp.createTempSync('freak_nav_'));
     await LibraryService.instance.setSongs([
       _song('One', 'First Album'),
