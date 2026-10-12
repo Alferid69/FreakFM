@@ -10,6 +10,8 @@ import '../services/library_service.dart';
 import '../services/music_scanner_service.dart';
 import '../services/storage_cache_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
+import '../widgets/detail_back_handler.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/top_tab_bar.dart';
 import '../widgets/volume_controller.dart';
@@ -30,6 +32,8 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin {
+  static const _tabNames = ['songs', 'folders', 'artists', 'albums', 'genres', 'favorites'];
+
   final LibraryService _library = LibraryService.instance;
   late TabController _tabController;
   late final AppLifecycleListener _lifecycle;
@@ -37,6 +41,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   Timer? _searchDebounce;
 
   List<Song> _filteredSongs = [];
+  String _activeQuery = '';
   bool _isLoading = true;
   SortOption _currentSort = SortOption.title;
   bool _isSearchOpen = false;
@@ -45,17 +50,18 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 6, vsync: this)
+      // Rebuild so the Back-button behaviour tracks the current tab.
+      ..addListener(() {
+        if (!_tabController.indexIsChanging && mounted) setState(() {});
+      });
     _searchController.addListener(_onSearchChanged);
     _library.songs.addListener(_applySortAndFilter);
     _library.revision.addListener(_onLibraryRevision);
+    DetailBackHandler.open.addListener(_onLibraryRevision);
     _errorSub = AudioPlayerService.instance.errors.listen(_showPlaybackError);
     // Persist pending favourite/play-count changes before the OS can kill us.
-    _lifecycle = AppLifecycleListener(
-      onPause: _library.flush,
-      onDetach: _library.flush,
-      onHide: _library.flush,
-    );
+    _lifecycle = AppLifecycleListener(onPause: _library.flush, onDetach: _library.flush, onHide: _library.flush);
     _loadInitialLibrary();
   }
 
@@ -66,6 +72,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     _searchDebounce?.cancel();
     _library.songs.removeListener(_applySortAndFilter);
     _library.revision.removeListener(_onLibraryRevision);
+    DetailBackHandler.open.removeListener(_onLibraryRevision);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -105,13 +112,11 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           ),
         );
       case ScanOutcome.failed:
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Scanning failed. Your existing library was kept.')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('Scanning failed. Your existing library was kept.')));
       case ScanOutcome.success:
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Library updated • ${_library.songs.value.length} tracks'),
+            content: Text('Library updated • ${plural(_library.songs.value.length, 'song')}'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -120,9 +125,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
 
   void _showPlaybackError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 3)));
   }
 
   void _onLibraryRevision() {
@@ -165,6 +168,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
 
     setState(() {
       _filteredSongs = list;
+      _activeQuery = query;
     });
   }
 
@@ -173,7 +177,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     final player = AudioPlayerService.instance;
     player.setShuffle(true);
     final start = _filteredSongs[Random().nextInt(_filteredSongs.length)];
-    player.playSong(start, contextQueue: _filteredSongs);
+    player.playSong(start, contextQueue: _filteredSongs, source: 'All songs');
   }
 
   Future<void> _addCustomFolderFromUI() async {
@@ -195,34 +199,29 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
       context: context,
       isScrollControlled: true,
       backgroundColor: AppTheme.spotifyCardElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             Widget header(String text) => Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 14, 8, 4),
-                  child: Text(
-                    text,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: AppTheme.spotifyLightGrey,
-                    ),
-                  ),
-                );
+              padding: const EdgeInsets.fromLTRB(8, 14, 8, 4),
+              child: Text(
+                text,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: AppTheme.spotifyLightGrey,
+                ),
+              ),
+            );
 
             Widget folderTile(String path, {Widget? trailing}) => ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.folder_rounded, color: AppTheme.accentAmber),
-                  title: Text(
-                    path,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
-                  ),
-                  trailing: trailing,
-                );
+              dense: true,
+              leading: const Icon(Icons.folder_rounded, color: AppTheme.accentAmber),
+              title: Text(path, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13)),
+              trailing: trailing,
+            );
 
             return SafeArea(
               child: ConstrainedBox(
@@ -300,9 +299,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.spotifyCardElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
@@ -314,11 +311,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Text(
                   'Sort Tracks By',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.spotifyWhite,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.spotifyWhite),
                 ),
               ),
               const Divider(color: Color(0xFF2A2A2A)),
@@ -372,170 +365,190 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
       TabItemData(label: 'Favorites', icon: Icons.favorite_rounded, badgeCount: favoritesCount),
     ];
 
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 12,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppTheme.spotifyGreen.withValues(alpha: 0.5), width: 1.2),
-                image: const DecorationImage(
-                  image: AssetImage('assets/icon/app_icon.png'),
-                  fit: BoxFit.cover,
+    final currentTab = _tabNames[_tabController.index];
+    final canPop = !_isSearchOpen &&
+        _tabController.index == 0 &&
+        !DetailBackHandler.open.value.containsKey(currentTab);
+    return PopScope(
+      canPop: canPop,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        // Back closes an open album/artist/genre/folder first, then search,
+        // then returns to the Songs tab before leaving the app.
+        if (DetailBackHandler.closeIn(currentTab)) return;
+        if (_isSearchOpen) {
+          setState(() {
+            _isSearchOpen = false;
+            _searchController.clear();
+          });
+        } else if (_tabController.index != 0) {
+          _tabController.animateTo(0);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: 12,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.spotifyGreen.withValues(alpha: 0.5), width: 1.2),
+                  image: const DecorationImage(image: AssetImage('assets/icon/app_icon.png'), fit: BoxFit.cover),
+                  boxShadow: AppTheme.softShadow,
                 ),
-                boxShadow: AppTheme.softShadow,
               ),
-            ),
-            const SizedBox(width: 10),
-            const Flexible(
-              child: Text(
-                'FREAK PLAYER',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                  color: AppTheme.spotifyWhite,
+              const SizedBox(width: 10),
+              const Flexible(
+                child: Text(
+                  'FREAK PLAYER',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                    color: AppTheme.spotifyWhite,
+                  ),
                 ),
               ),
+            ],
+          ),
+          actions: [
+            if (isDesktopPlatform) const VolumeControllerWidget(mode: VolumeDisplayMode.popup),
+            ValueListenableBuilder<bool>(
+              valueListenable: _library.isScanning,
+              builder: (context, scanning, _) => scanning
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.spotifyGreen),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
-          ],
-        ),
-        actions: [
-          const VolumeControllerWidget(mode: VolumeDisplayMode.popup),
-          ValueListenableBuilder<bool>(
-            valueListenable: _library.isScanning,
-            builder: (context, scanning, _) => IconButton(
-              key: const ValueKey('rescan_button'),
+            IconButton(
+              key: const ValueKey('search_button'),
               iconSize: 20,
               padding: const EdgeInsets.all(6),
               constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-              icon: scanning
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.spotifyWhite),
-                    )
-                  : const Icon(Icons.refresh_rounded, color: AppTheme.spotifyWhite),
-              onPressed: scanning ? null : _scanDeviceStorage,
-              tooltip: 'Rescan library',
+              icon: Icon(_isSearchOpen ? Icons.close_rounded : Icons.search_rounded, color: AppTheme.spotifyWhite),
+              onPressed: () {
+                setState(() {
+                  _isSearchOpen = !_isSearchOpen;
+                  if (!_isSearchOpen) _searchController.clear();
+                });
+              },
+              tooltip: 'Search library',
             ),
-          ),
-          IconButton(
-            key: const ValueKey('search_button'),
-            iconSize: 20,
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-            icon: Icon(
-              _isSearchOpen ? Icons.close_rounded : Icons.search_rounded,
-              color: AppTheme.spotifyWhite,
+            PopupMenuButton<String>(
+              key: const ValueKey('library_menu'),
+              icon: const Icon(Icons.more_vert_rounded, color: AppTheme.spotifyWhite, size: 20),
+              color: AppTheme.spotifyCardElevated,
+              onSelected: (value) {
+                switch (value) {
+                  case 'sort':
+                    _showSortDialog();
+                  case 'rescan':
+                    _scanDeviceStorage();
+                  case 'folders':
+                    _showLibraryFolders();
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: 'sort',
+                  child: ListTile(leading: Icon(Icons.sort_rounded), title: Text('Sort songs'), dense: true),
+                ),
+                PopupMenuItem(
+                  value: 'rescan',
+                  child: ListTile(leading: Icon(Icons.refresh_rounded), title: Text('Rescan library'), dense: true),
+                ),
+                PopupMenuItem(
+                  value: 'folders',
+                  child: ListTile(
+                    leading: Icon(Icons.folder_open_rounded),
+                    title: Text('Library folders'),
+                    dense: true,
+                  ),
+                ),
+              ],
             ),
-            onPressed: () {
-              setState(() {
-                _isSearchOpen = !_isSearchOpen;
-                if (!_isSearchOpen) _searchController.clear();
-              });
-            },
-            tooltip: 'Search library',
-          ),
-          PopupMenuButton<String>(
-            key: const ValueKey('library_menu'),
-            icon: const Icon(Icons.more_vert_rounded, color: AppTheme.spotifyWhite, size: 20),
-            color: AppTheme.spotifyCardElevated,
-            onSelected: (value) {
-              switch (value) {
-                case 'sort':
-                  _showSortDialog();
-                case 'folders':
-                  _showLibraryFolders();
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'sort', child: Text('Sort tracks')),
-              PopupMenuItem(value: 'folders', child: Text('Library folders')),
-            ],
-          ),
-          const SizedBox(width: 4),
-        ],
-        bottom: PreferredSize(
-          preferredSize: Size.fromHeight(_isSearchOpen ? 116 : 56),
-          child: Column(
-            children: [
-              if (_isSearchOpen)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                  child: TextField(
-                    key: const ValueKey('search_field'),
-                    controller: _searchController,
-                    autofocus: true,
-                    style: const TextStyle(color: AppTheme.spotifyWhite, fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Filter by song, artist, album, folder...',
-                      hintStyle: const TextStyle(color: AppTheme.spotifyLightGrey, fontSize: 13),
-                      prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.spotifyGreen, size: 20),
-                      filled: true,
-                      fillColor: AppTheme.spotifyCardElevated,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: AppTheme.spotifyGreen),
+            const SizedBox(width: 4),
+          ],
+          bottom: PreferredSize(
+            preferredSize: Size.fromHeight(_isSearchOpen ? 116 : 56),
+            child: Column(
+              children: [
+                if (_isSearchOpen)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: TextField(
+                      key: const ValueKey('search_field'),
+                      controller: _searchController,
+                      autofocus: true,
+                      style: const TextStyle(color: AppTheme.spotifyWhite, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: 'Filter by song, artist, album, folder...',
+                        hintStyle: const TextStyle(color: AppTheme.spotifyLightGrey, fontSize: 13),
+                        prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.spotifyGreen, size: 20),
+                        filled: true,
+                        fillColor: AppTheme.spotifyCardElevated,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppTheme.spotifyGreen),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              TopTabBar(controller: _tabController, tabs: tabs),
-            ],
+                TopTabBar(controller: _tabController, tabs: tabs),
+              ],
+            ),
           ),
         ),
-      ),
-      body: Stack(
-        children: [
-          _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(AppTheme.accentAmber),
+        body: Stack(
+          children: [
+            _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(AppTheme.accentAmber)),
+                  )
+                : TabBarView(
+                    controller: _tabController,
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      TracksTabView(
+                        songs: _filteredSongs,
+                        searchQuery: _activeQuery,
+                        onShuffleAll: _onShuffleAll,
+                        onScanStorage: _scanDeviceStorage,
+                        onAddFolder: Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isMacOS
+                            ? _addCustomFolderFromUI
+                            : null,
+                      ),
+                      FoldersTabView(songs: _filteredSongs),
+                      ArtistsTabView(songs: _filteredSongs),
+                      AlbumsTabView(songs: _filteredSongs),
+                      GenresTabView(songs: _filteredSongs),
+                      FavoritesTabView(songs: _filteredSongs),
+                    ],
                   ),
-                )
-              : TabBarView(
-                  controller: _tabController,
-                  physics: const BouncingScrollPhysics(),
-                  children: [
-                    TracksTabView(
-                      songs: _filteredSongs,
-                      onShuffleAll: _onShuffleAll,
-                      onScanStorage: _scanDeviceStorage,
-                      onAddFolder: Platform.isAndroid || Platform.isWindows || Platform.isLinux || Platform.isMacOS
-                          ? _addCustomFolderFromUI
-                          : null,
-                    ),
-                    FoldersTabView(songs: _filteredSongs),
-                    ArtistsTabView(songs: _filteredSongs),
-                    AlbumsTabView(songs: _filteredSongs),
-                    GenresTabView(songs: _filteredSongs),
-                    FavoritesTabView(songs: _filteredSongs),
-                  ],
-                ),
-          const Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: MiniPlayer(),
-          ),
-        ],
+            const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
+          ],
+        ),
       ),
     );
   }

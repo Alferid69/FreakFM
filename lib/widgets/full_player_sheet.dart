@@ -1,8 +1,11 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/song.dart';
+import '../models/lyrics_model.dart';
 import '../services/audio_player_service.dart';
+import '../services/lyrics_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
 import 'equalizer_dialog.dart';
 import 'lyrics_view.dart';
 import 'song_artwork_widget.dart';
@@ -104,26 +107,22 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
 
                                   // Hero Album Artwork (with Turntable toggle)
                                   _buildHeroArtwork(song, isPlaying),
-                                  const SizedBox(height: 20),
-
-                                  // Decorative spectrum animation (not driven by the audio signal)
-                                  FrequencySpectrumWidget(isPlaying: isPlaying, height: 26),
-                                  const SizedBox(height: 18),
+                                  const SizedBox(height: 24),
 
                                   // Song Metadata & Hi-Res Badge
                                   _buildSongInfo(song),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 12),
 
                                   // Audio Progress Scrubber
                                   _buildProgressScrubber(song),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 4),
 
                                   // Main Playback Controls
                                   _buildPlaybackControls(),
-                                  const SizedBox(height: 20),
+                                  const SizedBox(height: 4),
 
-                                  // Volume & Equalizer Bar
-                                  _buildVolumeAndFx(context),
+                                  // Seek / speed / EQ (+ volume on desktop)
+                                  _buildExtrasRow(context),
                                   const SizedBox(height: 20),
 
                                   // Spotify Synced Lyrics Preview Card
@@ -200,14 +199,16 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
                                     children: [
                                        _buildProgressScrubber(song),
                                        _buildPlaybackControls(),
-                                       const SizedBox(height: 8),
-                                       const Center(
-                                         child: VolumeControllerWidget(
-                                           mode: VolumeDisplayMode.inline,
-                                           sliderWidth: 150,
-                                           showPercentage: true,
+                                       if (isDesktopPlatform) ...[
+                                         const SizedBox(height: 8),
+                                         const Center(
+                                           child: VolumeControllerWidget(
+                                             mode: VolumeDisplayMode.inline,
+                                             sliderWidth: 150,
+                                             showPercentage: true,
+                                           ),
                                          ),
-                                       ),
+                                       ],
                                        const SizedBox(height: 12),
                                      ],
                                    ),
@@ -242,7 +243,7 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'PLAYING FROM FOLDER',
+                  'PLAYING FROM',
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
@@ -251,15 +252,18 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  player.currentSong.value?.folder ?? 'Music Library',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.spotifyWhite,
+                ValueListenableBuilder<String>(
+                  valueListenable: player.playingFrom,
+                  builder: (context, source, _) => Text(
+                    source,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.spotifyWhite,
+                    ),
                   ),
                 ),
               ],
@@ -687,158 +691,11 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
     );
   }
 
-  Widget _buildProgressScrubber(Song song) {
-    return ValueListenableBuilder<Duration>(
-      valueListenable: player.duration,
-      builder: (context, totalDuration, _) {
-        return ValueListenableBuilder<Duration>(
-          valueListenable: player.position,
-          builder: (context, pos, _) {
-            final rawTotalMs = totalDuration.inMilliseconds > 0
-                ? totalDuration.inMilliseconds
-                : (song.durationMs > 0 ? song.durationMs : 1);
-            final totalMs = max(rawTotalMs, pos.inMilliseconds);
-            final currentMs = pos.inMilliseconds.clamp(0, totalMs);
-
-            return Column(
-              children: [
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3.5,
-                    activeTrackColor: AppTheme.spotifyGreen,
-                    inactiveTrackColor: const Color(0xFF4D4D4D),
-                    thumbColor: AppTheme.spotifyWhite,
-                    overlayColor: AppTheme.spotifyGreen.withValues(alpha: 0.15),
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                  ),
-                  child: Slider(
-                    value: currentMs.toDouble(),
-                    max: totalMs.toDouble(),
-                    onChanged: (val) {
-                      player.seek(Duration(milliseconds: val.toInt()));
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _formatTime(pos),
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.spotifyLightGrey,
-                        ),
-                      ),
-                      Text(
-                        _formatTime(Duration(milliseconds: totalMs)),
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.spotifyLightGrey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+  Widget _buildProgressScrubber(Song song) => _ProgressScrubber(song: song);
 
   Widget _buildPlaybackControls() {
     return Column(
       children: [
-        // Auxiliary Quick Seek & Speed Bar
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Quick Rewind -10s
-              TextButton.icon(
-                onPressed: () => player.seekRelative(const Duration(seconds: -10)),
-                icon: const Icon(Icons.replay_10_rounded, size: 18, color: AppTheme.spotifyLightGrey),
-                label: const Text(
-                  '-10s',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.spotifyLightGrey),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-
-              // Playback Speed Selector Chip
-              ValueListenableBuilder<double>(
-                valueListenable: player.playbackSpeed,
-                builder: (context, speed, _) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: AppTheme.spotifyCardHighlight,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: speed != 1.0 ? AppTheme.spotifyGreen : const Color(0xFF383838),
-                      ),
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _showSpeedSelector(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.speed_rounded,
-                              size: 14,
-                              color: speed != 1.0 ? AppTheme.spotifyGreen : AppTheme.spotifyLightGrey,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${speed}x',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: speed != 1.0 ? AppTheme.spotifyGreen : AppTheme.spotifyWhite,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-
-              // Quick Forward +10s
-              TextButton.icon(
-                onPressed: () => player.seekRelative(const Duration(seconds: 10)),
-                label: const Text(
-                  '+10s',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.spotifyLightGrey),
-                ),
-                icon: const Icon(Icons.forward_10_rounded, size: 18, color: AppTheme.spotifyLightGrey),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-
         // Primary Playback Controls (Shuffle, Prev, Play/Pause, Next, Repeat)
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -939,16 +796,97 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
     );
   }
 
-  Widget _buildVolumeAndFx(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppTheme.spotifyCardElevated,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF2E2E2E)),
-      ),
-      child: Column(
-        children: [
+  /// Secondary controls under the transport: ±10s, playback speed, the
+  /// equalizer (Android) and — on desktop only — an in-app volume slider.
+  Widget _buildExtrasRow(BuildContext context) {
+    Widget chip({
+      Key? key,
+      required IconData icon,
+      required String label,
+      required bool active,
+      required String tooltip,
+      required VoidCallback onTap,
+    }) {
+      final color = active ? AppTheme.spotifyGreen : AppTheme.spotifyLightGrey;
+      return Tooltip(
+        message: tooltip,
+        child: Material(
+          color: AppTheme.spotifyCardHighlight,
+          shape: StadiumBorder(
+            side: BorderSide(color: active ? AppTheme.spotifyGreen : const Color(0xFF383838)),
+          ),
+          child: InkWell(
+            key: key,
+            customBorder: const StadiumBorder(),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 15, color: color),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: active ? color : AppTheme.spotifyWhite,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.replay_10_rounded, color: AppTheme.spotifyLightGrey),
+              onPressed: () => player.seekRelative(const Duration(seconds: -10)),
+              tooltip: 'Back 10 seconds',
+            ),
+            const SizedBox(width: 4),
+            ValueListenableBuilder<double>(
+              valueListenable: player.playbackSpeed,
+              builder: (context, speed, _) => chip(
+                icon: Icons.speed_rounded,
+                label: '${speed}x',
+                active: speed != 1.0,
+                tooltip: 'Playback speed',
+                onTap: () => _showSpeedSelector(context),
+              ),
+            ),
+            if (player.equalizerSupported) ...[
+              const SizedBox(width: 8),
+              AnimatedBuilder(
+                animation: Listenable.merge([player.equalizerPreset, player.equalizerEnabled]),
+                builder: (context, _) => chip(
+                  key: const ValueKey('equalizer_button'),
+                  icon: Icons.tune_rounded,
+                  label: player.equalizerEnabled.value ? player.equalizerPreset.value : 'EQ off',
+                  active: player.equalizerEnabled.value,
+                  tooltip: 'Equalizer',
+                  onTap: () => showDialog(context: context, builder: (context) => const EqualizerDialog()),
+                ),
+              ),
+            ],
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.forward_10_rounded, color: AppTheme.spotifyLightGrey),
+              onPressed: () => player.seekRelative(const Duration(seconds: 10)),
+              tooltip: 'Forward 10 seconds',
+            ),
+          ],
+        ),
+        if (isDesktopPlatform) ...[
+          const SizedBox(height: 8),
           const Center(
             child: VolumeControllerWidget(
               mode: VolumeDisplayMode.inline,
@@ -956,100 +894,111 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
               showPercentage: true,
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              if (player.equalizerSupported)
-                AnimatedBuilder(
-                  animation: Listenable.merge([player.equalizerPreset, player.equalizerEnabled]),
-                  builder: (context, _) {
-                    final label = player.equalizerEnabled.value
-                        ? 'EQ: ${player.equalizerPreset.value}'
-                        : 'EQ: Off';
-                    return TextButton.icon(
-                      key: const ValueKey('equalizer_button'),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => const EqualizerDialog(),
-                        );
-                      },
-                      icon: const Icon(Icons.tune_rounded, size: 16, color: AppTheme.spotifyGreen),
-                      label: Text(
-                        label,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.spotifyWhite,
-                        ),
-                      ),
-                    );
-                  },
-                )
-              else
-                const SizedBox.shrink(),
-              Text(
-                'FOLDER: ${player.currentSong.value?.folder ?? "Default"}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.spotifyLightGrey,
-                  letterSpacing: 0.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
         ],
-      ),
+      ],
     );
   }
 
   Widget _buildLyricsPreviewCard(Song song) {
-    return InkWell(
-      onTap: () => setState(() => _selectedTab = 1),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppTheme.spotifyCardElevated,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF2A2A2A)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text(
-                  'Lyrics',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.spotifyWhite,
-                  ),
+    return Material(
+      color: AppTheme.spotifyCardElevated,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFF2A2A2A)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: const ValueKey('lyrics_preview_card'),
+        onTap: () => setState(() => _selectedTab = 1),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Lyrics',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.spotifyWhite),
+                    ),
+                    Icon(Icons.open_in_full_rounded, size: 16, color: AppTheme.spotifyLightGrey),
+                  ],
                 ),
-                Icon(
-                  Icons.open_in_full_rounded,
-                  size: 16,
-                  color: AppTheme.spotifyLightGrey,
+                const SizedBox(height: 10),
+                AnimatedBuilder(
+                  animation: Listenable.merge([
+                    LyricsService.instance.currentLyrics,
+                    LyricsService.instance.isLoading,
+                    player.position,
+                  ]),
+                  builder: (context, _) => _lyricsPreviewText(song),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            const Text(
-              'Tap here to view synchronized live lyrics...',
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w500,
-                color: AppTheme.spotifyLightGrey,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// The current and next synced line, the opening of plain lyrics, or a
+  /// status message — so the card is useful without opening the lyrics tab.
+  Widget _lyricsPreviewText(Song song) {
+    const muted = TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, color: AppTheme.spotifyLightGrey);
+    final LyricsData? lyrics = LyricsService.instance.currentLyrics.value;
+    final forThisSong = lyrics != null && lyrics.songId == song.id;
+
+    if (!forThisSong || lyrics.isEmpty || lyrics.isError) {
+      final String text;
+      if (LyricsService.instance.isLoading.value) {
+        text = 'Looking for lyrics…';
+      } else if (forThisSong && lyrics.errorMessage != null) {
+        text = lyrics.errorMessage!;
+      } else {
+        text = 'Tap to view lyrics';
+      }
+      return Text(text, style: muted);
+    }
+
+    if (lyrics.isSynced) {
+      final pos = player.position.value;
+      var i = 0;
+      for (var j = 0; j < lyrics.syncedLines.length; j++) {
+        if (pos >= lyrics.syncedLines[j].timestamp) i = j;
+      }
+      final current = lyrics.syncedLines[i].text;
+      final next = i + 1 < lyrics.syncedLines.length ? lyrics.syncedLines[i + 1].text : '';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            current.isEmpty ? '♪' : current,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.spotifyWhite, height: 1.3),
+          ),
+          if (next.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(next, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
+          ],
+        ],
+      );
+    }
+
+    final opening = (lyrics.plainLyrics ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .take(3)
+        .join('\n');
+    return Text(
+      opening,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      style: muted.copyWith(color: AppTheme.spotifyWhite, height: 1.4),
     );
   }
 
@@ -1225,7 +1174,7 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Playback Queue (${queue.length} tracks)',
+                            'Queue • ${plural(queue.length, 'song')}',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -1328,9 +1277,79 @@ class _FullPlayerSheetState extends State<FullPlayerSheet>
     );
   }
 
-  String _formatTime(Duration d) {
-    final minutes = d.inMinutes;
-    final seconds = d.inSeconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+}
+
+/// Seek bar that follows playback but only seeks when the drag ends, so
+/// scrubbing doesn't fire a seek per frame (which makes audio stutter).
+class _ProgressScrubber extends StatefulWidget {
+  final Song song;
+  const _ProgressScrubber({required this.song});
+
+  @override
+  State<_ProgressScrubber> createState() => _ProgressScrubberState();
+}
+
+class _ProgressScrubberState extends State<_ProgressScrubber> {
+  final player = AudioPlayerService.instance;
+  double? _dragMs;
+
+  static const _timeStyle = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+    color: AppTheme.spotifyLightGrey,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([player.duration, player.position]),
+      builder: (context, _) {
+        final pos = player.position.value;
+        final total = player.duration.value;
+        final rawTotalMs = total.inMilliseconds > 0
+            ? total.inMilliseconds
+            : (widget.song.durationMs > 0 ? widget.song.durationMs : 1);
+        final totalMs = max(rawTotalMs, pos.inMilliseconds);
+        final shownMs = (_dragMs ?? pos.inMilliseconds.toDouble()).clamp(0.0, totalMs.toDouble());
+
+        return Column(
+          children: [
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3.5,
+                activeTrackColor: AppTheme.spotifyGreen,
+                inactiveTrackColor: const Color(0xFF4D4D4D),
+                thumbColor: AppTheme.spotifyWhite,
+                overlayColor: AppTheme.spotifyGreen.withValues(alpha: 0.15),
+                thumbShape: RoundSliderThumbShape(enabledThumbRadius: _dragMs != null ? 8 : 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+              ),
+              child: Slider(
+                key: const ValueKey('seek_slider'),
+                value: shownMs,
+                max: totalMs.toDouble(),
+                onChangeStart: (v) => setState(() => _dragMs = v),
+                onChanged: (v) => setState(() => _dragMs = v),
+                onChangeEnd: (v) async {
+                  await player.seek(Duration(milliseconds: v.toInt()));
+                  if (mounted) setState(() => _dragMs = null);
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(formatDuration(Duration(milliseconds: shownMs.toInt())), style: _timeStyle),
+                  Text(formatDuration(Duration(milliseconds: totalMs)), style: _timeStyle),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }

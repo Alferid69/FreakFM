@@ -4,6 +4,8 @@ import '../models/song.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
+import '../widgets/detail_back_handler.dart';
 import '../widgets/track_list_tile.dart';
 
 class FoldersTabView extends StatefulWidget {
@@ -21,6 +23,22 @@ class FoldersTabView extends StatefulWidget {
 class _FoldersTabViewState extends State<FoldersTabView> {
   String? _selectedFolderPath;
 
+  void _openDetail(String value) {
+    setState(() => _selectedFolderPath = value);
+    DetailBackHandler.register('folders', _closeDetail);
+  }
+
+  void _closeDetail() {
+    DetailBackHandler.unregister('folders');
+    if (mounted) _closeDetail();
+  }
+
+  @override
+  void dispose() {
+    DetailBackHandler.unregister('folders');
+    super.dispose();
+  }
+
   Future<void> _confirmHideFolder(FolderGroup group) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -28,7 +46,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
         backgroundColor: AppTheme.spotifyCardElevated,
         title: Text('Hide "${group.folderName}"?', style: const TextStyle(color: AppTheme.textPrimary)),
         content: Text(
-          '${group.songs.length} tracks in\n${group.folderPath}\nwill be removed from your library and skipped by future scans. '
+          '${plural(group.songs.length, 'song')} in\n${group.folderPath}\nwill be removed from your library and skipped by future scans. '
           'You can bring it back from Library folders.',
           style: const TextStyle(color: AppTheme.spotifyLightGrey, fontSize: 13),
         ),
@@ -43,7 +61,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
     );
     if (confirmed == true) {
       await LibraryService.instance.hideFolder(group.folderPath);
-      if (mounted) setState(() => _selectedFolderPath = null);
+      if (mounted) _closeDetail();
     }
   }
 
@@ -89,9 +107,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () {
-                setState(() {
-                  _selectedFolderPath = group.folderPath;
-                });
+                _openDetail(group.folderPath);
               },
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -131,7 +147,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${group.songs.length} tracks • ${_formatSize(group.totalSizeBytes)}',
+                            '${plural(group.songs.length, 'song')} • ${_formatSize(group.totalSizeBytes)}',
                             style: const TextStyle(
                               fontSize: 12.5,
                               color: AppTheme.textSecondary,
@@ -155,7 +171,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
                     IconButton(
                       icon: const Icon(Icons.play_circle_fill_rounded, color: AppTheme.accentAmber, size: 36),
                       onPressed: () {
-                        AudioPlayerService.instance.playSong(group.songs.first, contextQueue: group.songs);
+                        AudioPlayerService.instance.playSong(group.songs.first, contextQueue: group.songs, source: 'Folder • ${group.folderName}');
                       },
                       tooltip: 'Play folder',
                     ),
@@ -187,7 +203,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
-                onPressed: () => setState(() => _selectedFolderPath = null),
+                onPressed: () => _closeDetail(),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -205,7 +221,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
                       ),
                     ),
                     Text(
-                      '${folderSongs.length} tracks in folder',
+                      plural(folderSongs.length, 'song'),
                       style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
@@ -218,7 +234,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
               ),
               ElevatedButton.icon(
                 onPressed: () {
-                  player.playSong(folderSongs.first, contextQueue: folderSongs);
+                  player.playSong(folderSongs.first, contextQueue: folderSongs, source: 'Folder • $folderName');
                 },
                 icon: const Icon(Icons.play_arrow_rounded, size: 18),
                 label: const Text('Play All'),
@@ -252,7 +268,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
                         index: index + 1,
                         isCurrent: isCurrent,
                         isPlaying: isPlaying,
-                        onTap: () => player.playSong(song, contextQueue: folderSongs),
+                        onTap: () => player.playSong(song, contextQueue: folderSongs, source: 'Folder • $folderName'),
                         onFavoriteToggle: () {
                           LibraryService.instance.toggleFavorite(song);
                         },

@@ -3,6 +3,8 @@ import '../models/song.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
+import '../widgets/detail_back_handler.dart';
 import '../widgets/track_list_tile.dart';
 
 class GenresTabView extends StatefulWidget {
@@ -19,6 +21,22 @@ class GenresTabView extends StatefulWidget {
 
 class _GenresTabViewState extends State<GenresTabView> {
   String? _selectedGenre;
+
+  void _openDetail(String value) {
+    setState(() => _selectedGenre = value);
+    DetailBackHandler.register('genres', _closeDetail);
+  }
+
+  void _closeDetail() {
+    DetailBackHandler.unregister('genres');
+    if (mounted) _closeDetail();
+  }
+
+  @override
+  void dispose() {
+    DetailBackHandler.unregister('genres');
+    super.dispose();
+  }
 
   final Map<String, IconData> _genreIcons = {
     'Hip-Hop / Rap': Icons.spatial_audio_rounded,
@@ -71,14 +89,16 @@ class _GenresTabViewState extends State<GenresTabView> {
         final group = genreGroups[index];
         final icon = _genreIcons[group.genreName] ?? Icons.music_note_rounded;
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Material(
             color: AppTheme.bgSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.borderSubtle),
-          ),
-          child: ListTile(
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.borderSubtle),
+            ),
+            child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             leading: Container(
               width: 46,
@@ -101,20 +121,19 @@ class _GenresTabViewState extends State<GenresTabView> {
               ),
             ),
             subtitle: Text(
-              '${group.trackCount} tracks in catalog',
+              plural(group.trackCount, 'song'),
               style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
             ),
             trailing: IconButton(
               icon: const Icon(Icons.play_circle_fill_rounded, color: AppTheme.accentAmber, size: 34),
               onPressed: () {
-                AudioPlayerService.instance.playSong(group.songs.first, contextQueue: group.songs);
+                AudioPlayerService.instance.playSong(group.songs.first, contextQueue: group.songs, source: 'Genre • ${group.genreName}');
               },
             ),
             onTap: () {
-              setState(() {
-                _selectedGenre = group.genreName;
-              });
+              _openDetail(group.genreName);
             },
+          ),
           ),
         );
       },
@@ -136,7 +155,7 @@ class _GenresTabViewState extends State<GenresTabView> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
-                onPressed: () => setState(() => _selectedGenre = null),
+                onPressed: () => _closeDetail(),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -154,7 +173,7 @@ class _GenresTabViewState extends State<GenresTabView> {
                       ),
                     ),
                     Text(
-                      '${genreSongs.length} tracks in genre',
+                      plural(genreSongs.length, 'song'),
                       style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
@@ -162,7 +181,7 @@ class _GenresTabViewState extends State<GenresTabView> {
               ),
               ElevatedButton.icon(
                 onPressed: () {
-                  player.playSong(genreSongs.first, contextQueue: genreSongs);
+                  player.playSong(genreSongs.first, contextQueue: genreSongs, source: 'Genre • $genreName');
                 },
                 icon: const Icon(Icons.play_arrow_rounded, size: 18),
                 label: const Text('Play Genre'),
@@ -194,7 +213,7 @@ class _GenresTabViewState extends State<GenresTabView> {
                         index: index + 1,
                         isCurrent: isCurrent,
                         isPlaying: isPlaying,
-                        onTap: () => player.playSong(song, contextQueue: genreSongs),
+                        onTap: () => player.playSong(song, contextQueue: genreSongs, source: 'Genre • $genreName'),
                         onFavoriteToggle: () {
                           LibraryService.instance.toggleFavorite(song);
                         },

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../theme/app_theme.dart';
 import 'song_artwork_widget.dart';
+import 'song_options_sheet.dart';
 import 'waveform_visualizer.dart';
 
 class TrackListTile extends StatelessWidget {
@@ -37,6 +38,7 @@ class TrackListTile extends StatelessWidget {
         child: InkWell(
           key: ValueKey('track_${song.id}'),
           onTap: onTap,
+          onLongPress: () => (onMoreOptions ?? () => showSongOptions(context, song))(),
           borderRadius: BorderRadius.circular(8),
           hoverColor: AppTheme.spotifyCardHighlight,
           child: Padding(
@@ -163,15 +165,16 @@ class TrackListTile extends StatelessWidget {
                 ),
 
                 // More Menu Button
-                if (onMoreOptions != null)
-                  IconButton(
-                    iconSize: 18,
-                    splashRadius: 18,
-                    padding: const EdgeInsets.all(6),
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    icon: const Icon(Icons.more_vert_rounded, color: AppTheme.spotifyLightGrey),
-                    onPressed: onMoreOptions,
-                  ),
+                IconButton(
+                  key: ValueKey('more_${song.id}'),
+                  iconSize: 18,
+                  splashRadius: 18,
+                  padding: const EdgeInsets.all(6),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 36),
+                  icon: const Icon(Icons.more_vert_rounded, color: AppTheme.spotifyLightGrey),
+                  tooltip: 'More options',
+                  onPressed: onMoreOptions ?? () => showSongOptions(context, song),
+                ),
               ],
             ),
           ),

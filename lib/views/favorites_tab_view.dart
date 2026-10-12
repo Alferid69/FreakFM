@@ -81,7 +81,7 @@ class FavoritesTabView extends StatelessWidget {
                                     index: index + 1,
                                     isCurrent: isCurrent,
                                     isPlaying: isPlaying,
-                                    onTap: () => player.playSong(song, contextQueue: favorites),
+                                    onTap: () => player.playSong(song, contextQueue: favorites, source: 'Liked Songs'),
                                     onFavoriteToggle: () {
                                       LibraryService.instance.toggleFavorite(song);
                                     },
@@ -118,7 +118,7 @@ class FavoritesTabView extends StatelessWidget {
                                     index: index + 1,
                                     isCurrent: isCurrent,
                                     isPlaying: isPlaying,
-                                    onTap: () => player.playSong(song, contextQueue: topPlayed),
+                                    onTap: () => player.playSong(song, contextQueue: topPlayed, source: 'Most Played'),
                                     onFavoriteToggle: () {
                                       LibraryService.instance.toggleFavorite(song);
                                     },

@@ -27,7 +27,9 @@
 
 ### 3. Iconic Spotify Components
 - **Filter Pills**: Pill-shaped horizontal chip list (`borderRadius: 24`). Selected pill is Spotify Green (`#1DB954`) or white (`#FFFFFF`) with pure black text (`#000000`, `w700`), unselected is `#2A2A2A` with `#FFFFFF` text.
-- **Quick-Access Grid**: 2-column compact grid of 6 tiles with square album art on the left (56x56) and bold title on `#282828` with rounded corners (4px).
+- **Quick-Access Grid**: 2-column (4 on wide screens) grid of 4 tiles — Liked Songs, Most Played, Recently Added, Shuffle All — each with a 56px gradient icon block on the left and a bold title on `#2A2A2A` (6px radius). Tiles with nothing to play are dimmed.
 - **Track List Tile**: 48x48 rounded album art (4px radius). When currently playing, the track title shines in Spotify Green `#1DB954` with a speaker/equalizer icon. Heart toggle on the right.
-- **Spotify Mini Player**: `#242424` card with 8px radius or docked `#181818` bar. Left: 44x44 cover art + track title & artist. Right: play/pause, next, heart. Bottom edge: 2px slim Spotify Green playback progress bar.
-- **Spotify Full Player**: Dynamic deep gradient background (`#383838` to `#121212`), hero square album cover with soft shadow, sleek thin Spotify slider, giant white circular play button (64x64) with black icon, shuffle/repeat green indicator dots, and live synced lyrics sheet.
+- **Spotify Mini Player**: `#242424` card with 8px radius. Left: 42x42 cover art + track title & artist. Right: lyrics, heart, play/pause, next. Bottom edge: 2px Spotify Green progress bar. Swipe left/right to skip, swipe up (or tap) to expand.
+- **Spotify Full Player**: Deep gradient background (`#383838` to `#121212`), "Playing from" context in the header, hero square cover with soft shadow, thin seek slider that seeks on release, white 64x64 play button, green shuffle/repeat states, a row of pill chips (speed, EQ) between ±10 s buttons, and a live lyrics preview card.
+- **Song Menu (bottom sheet)**: Opened from a track's ⋮ or long-press. Header with cover, title and artist, then list actions: Play next, Add to queue, Like, Song info, Hide this folder.
+- **Tab Pills**: The selected pill auto-scrolls into view; the right edge fades to signal more tabs. System Back closes an open album/artist/genre/folder, then returns to Songs.

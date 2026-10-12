@@ -58,6 +58,9 @@ class AudioPlayerService {
   final ValueNotifier<String> equalizerPreset = ValueNotifier<String>('Flat');
   final ValueNotifier<bool> equalizerEnabled = ValueNotifier<bool>(false);
 
+  /// Where the current queue came from, e.g. "Album • After Hours".
+  final ValueNotifier<String> playingFrom = ValueNotifier<String>('Your library');
+
   final StreamController<String> _errors = StreamController<String>.broadcast();
 
   /// User-facing playback errors (e.g. a file that can't be decoded).
@@ -66,6 +69,8 @@ class AudioPlayerService {
   Timer? _sleepTimer;
   final List<StreamSubscription<dynamic>> _subs = [];
   int _loadToken = 0;
+  bool _loadInFlight = false;
+  Duration? _pendingSeek;
   int _consecutiveFailures = 0;
   bool _completionHandled = false;
   bool _equalizerRestored = false;
@@ -155,7 +160,8 @@ class AudioPlayerService {
 
   /// Plays [song]. With [contextQueue] the queue is replaced by that list;
   /// otherwise the song is jumped to (if queued) or inserted next.
-  Future<void> playSong(Song song, {List<Song>? contextQueue}) async {
+  Future<void> playSong(Song song, {List<Song>? contextQueue, String? source}) async {
+    if (source != null) playingFrom.value = source;
     if (contextQueue != null && contextQueue.isNotEmpty) {
       final idx = contextQueue.indexWhere((s) => s.id == song.id);
       _queue.setQueue(contextQueue, idx >= 0 ? idx : 0);
@@ -179,11 +185,19 @@ class AudioPlayerService {
     duration.value = Duration(milliseconds: song.durationMs);
     unawaited(FreakAudioHandler.instance?.broadcastSong(song));
 
+    _pendingSeek = null;
+    _loadInFlight = true;
     try {
       final source = _sourceFor(song);
       final loaded = await _player.setAudioSource(source);
       if (token != _loadToken) return; // superseded by a newer request
+      _loadInFlight = false;
       _completionHandled = false;
+      final pending = _pendingSeek;
+      if (pending != null) {
+        _pendingSeek = null;
+        await _seekPlatform(pending);
+      }
 
       if (loaded != null && loaded > Duration.zero) {
         duration.value = loaded;
@@ -197,6 +211,7 @@ class AudioPlayerService {
       _broadcastPlaybackState();
     } catch (e) {
       if (token != _loadToken) return;
+      _loadInFlight = false;
       debugPrint('Playback error for ${song.filePath}: $e');
       _errors.add('Can\'t play "${song.title}" — the file is missing or unsupported.');
       isPlaying.value = false;
@@ -255,7 +270,7 @@ class AudioPlayerService {
     }
     if (state == ProcessingState.completed) {
       _completionHandled = false;
-      await _player.seek(Duration.zero);
+      await _seekPlatform(Duration.zero);
     }
     unawaited(_player.play());
   }
@@ -274,8 +289,23 @@ class AudioPlayerService {
 
   Future<void> seek(Duration pos) async {
     position.value = pos;
-    await _player.seek(pos);
+    if (_loadInFlight) {
+      // Seeking while a source is still loading can stall on some platforms;
+      // apply it as soon as the load finishes instead.
+      _pendingSeek = pos;
+      return;
+    }
+    await _seekPlatform(pos);
     _broadcastPlaybackState();
+  }
+
+  /// Never lets a stuck platform seek freeze the caller (e.g. the seek bar).
+  Future<void> _seekPlatform(Duration pos) async {
+    try {
+      await _player.seek(pos).timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      debugPrint('Seek to $pos timed out');
+    }
   }
 
   Future<void> seekRelative(Duration delta) async {
@@ -328,7 +358,7 @@ class AudioPlayerService {
     if (idx == null) {
       // End of the queue with repeat off: stop at the start of the last song.
       await _player.pause();
-      await _player.seek(Duration.zero);
+      await _seekPlatform(Duration.zero);
       return;
     }
     _syncQueueNotifiers();
@@ -348,6 +378,33 @@ class AudioPlayerService {
     }
     _syncQueueNotifiers();
     await _loadAndPlay(_queue.songs[idx]);
+  }
+
+  /// Queues [song] to play right after the current one.
+  void playNext(Song song) {
+    if (currentSong.value == null) {
+      playSong(song, contextQueue: [song]);
+      return;
+    }
+    _removeUpcomingCopy(song);
+    _queue.insertNext(song);
+    _syncQueueNotifiers();
+  }
+
+  /// Adds [song] to the end of the queue.
+  void addToQueue(Song song) {
+    if (currentSong.value == null) {
+      playSong(song, contextQueue: [song]);
+      return;
+    }
+    _removeUpcomingCopy(song);
+    _queue.append(song);
+    _syncQueueNotifiers();
+  }
+
+  void _removeUpcomingCopy(Song song) {
+    final idx = _queue.songs.indexWhere((s) => s.id == song.id);
+    if (idx >= 0 && idx != _queue.index) _queue.removeAt(idx);
   }
 
   void toggleShuffle() => setShuffle(!isShuffle.value);

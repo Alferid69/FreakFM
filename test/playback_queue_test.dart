@@ -107,6 +107,20 @@ void main() {
       expect(q.current!.id, 's3');
     });
 
+    test('append adds to the end and is reached in shuffle too', () {
+      final q = PlaybackQueue(random: Random(5))
+        ..setQueue(_songs(3), 0)
+        ..setShuffle(true);
+      final extra = _songs(4).last;
+      expect(q.append(extra), 3);
+      final heard = <int>[q.index];
+      int? n;
+      while ((n = q.advance(AudioRepeatMode.off)) != null) {
+        heard.add(n!);
+      }
+      expect(heard.toSet(), {0, 1, 2, 3});
+    });
+
     test('removing an earlier song keeps the current song selected', () {
       final q = PlaybackQueue()..setQueue(_songs(4), 2);
       q.removeAt(0);

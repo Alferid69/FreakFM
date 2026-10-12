@@ -3,6 +3,8 @@ import '../models/song.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
+import '../widgets/detail_back_handler.dart';
 import '../widgets/song_artwork_widget.dart';
 import '../widgets/track_list_tile.dart';
 
@@ -21,26 +23,47 @@ class AlbumsTabView extends StatefulWidget {
 class _AlbumsTabViewState extends State<AlbumsTabView> {
   String? _selectedAlbum;
 
+  void _openDetail(String value) {
+    setState(() => _selectedAlbum = value);
+    DetailBackHandler.register('albums', _closeDetail);
+  }
+
+  void _closeDetail() {
+    DetailBackHandler.unregister('albums');
+    if (mounted) _closeDetail();
+  }
+
+  @override
+  void dispose() {
+    DetailBackHandler.unregister('albums');
+    super.dispose();
+  }
+
+  static String _albumKey(Song s) =>
+      (s.albumId != null && s.albumId! > 0) ? 'id:${s.albumId}' : '${s.album.toLowerCase()}|${s.folderPath}';
+
   @override
   Widget build(BuildContext context) {
+    // Same-named albums (e.g. "Greatest Hits") by different artists stay
+    // separate: MediaStore's album id when known, else name + folder.
     final Map<String, List<Song>> albumMap = {};
     for (final song in widget.songs) {
-      albumMap.putIfAbsent(song.album, () => []).add(song);
+      albumMap.putIfAbsent(_albumKey(song), () => []).add(song);
     }
 
     final albumGroups = albumMap.entries.map((entry) {
       return AlbumGroup(
-        albumName: entry.key,
+        albumName: entry.value.first.album,
         artistName: entry.value.first.artist,
         songs: entry.value,
         year: entry.value.first.year,
       );
     }).toList()
-      ..sort((a, b) => a.albumName.compareTo(b.albumName));
+      ..sort((a, b) => a.albumName.toLowerCase().compareTo(b.albumName.toLowerCase()));
 
     if (_selectedAlbum != null && albumMap.containsKey(_selectedAlbum)) {
       final albumSongs = albumMap[_selectedAlbum]!;
-      return _buildAlbumTracksView(_selectedAlbum!, albumSongs);
+      return _buildAlbumTracksView(albumSongs.first.album, albumSongs);
     }
 
     final crossAxisCount = MediaQuery.of(context).size.width > 600 ? 3 : 2;
@@ -70,9 +93,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () {
-                setState(() {
-                  _selectedAlbum = group.albumName;
-                });
+                _openDetail(_albumKey(group.songs.first));
               },
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -100,7 +121,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                '${group.trackCount} trk',
+                                plural(group.trackCount, 'song'),
                                 style: const TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
@@ -163,7 +184,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
-                onPressed: () => setState(() => _selectedAlbum = null),
+                onPressed: () => _closeDetail(),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -181,7 +202,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
                       ),
                     ),
                     Text(
-                      '$artistName • ${year ?? "Classic"} • ${albumSongs.length} tracks',
+                      [artistName, if (year != null) '$year', plural(albumSongs.length, 'song')].join(' • '),
                       style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
@@ -189,7 +210,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
               ),
               ElevatedButton.icon(
                 onPressed: () {
-                  player.playSong(albumSongs.first, contextQueue: albumSongs);
+                  player.playSong(albumSongs.first, contextQueue: albumSongs, source: 'Album • $albumName');
                 },
                 icon: const Icon(Icons.play_arrow_rounded, size: 18),
                 label: const Text('Play Album'),
@@ -221,7 +242,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
                         index: index + 1,
                         isCurrent: isCurrent,
                         isPlaying: isPlaying,
-                        onTap: () => player.playSong(song, contextQueue: albumSongs),
+                        onTap: () => player.playSong(song, contextQueue: albumSongs, source: 'Album • $albumName'),
                         onFavoriteToggle: () {
                           LibraryService.instance.toggleFavorite(song);
                         },

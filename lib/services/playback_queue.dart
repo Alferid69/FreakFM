@@ -61,6 +61,14 @@ class PlaybackQueue {
     return at;
   }
 
+  /// Adds [song] to the end of the queue (and of the shuffle order).
+  int append(Song song) {
+    final at = _songs.length;
+    _songs = List<Song>.unmodifiable([..._songs, song]);
+    if (_shuffle) _order = [..._order, at];
+    return at;
+  }
+
   void setShuffle(bool enabled) {
     if (_shuffle == enabled) return;
     _shuffle = enabled;

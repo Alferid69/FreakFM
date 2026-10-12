@@ -3,6 +3,8 @@ import '../models/song.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
+import '../widgets/detail_back_handler.dart';
 import '../widgets/track_list_tile.dart';
 
 class ArtistsTabView extends StatefulWidget {
@@ -19,6 +21,22 @@ class ArtistsTabView extends StatefulWidget {
 
 class _ArtistsTabViewState extends State<ArtistsTabView> {
   String? _selectedArtist;
+
+  void _openDetail(String value) {
+    setState(() => _selectedArtist = value);
+    DetailBackHandler.register('artists', _closeDetail);
+  }
+
+  void _closeDetail() {
+    DetailBackHandler.unregister('artists');
+    if (mounted) _closeDetail();
+  }
+
+  @override
+  void dispose() {
+    DetailBackHandler.unregister('artists');
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -50,14 +68,16 @@ class _ArtistsTabViewState extends State<ArtistsTabView> {
             ? group.artistName.trim().substring(0, 1).toUpperCase()
             : '?';
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          decoration: BoxDecoration(
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
             color: AppTheme.bgSurface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppTheme.borderSubtle),
-          ),
-          child: ListTile(
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.borderSubtle),
+            ),
+            child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             leading: Container(
               width: 46,
@@ -90,15 +110,14 @@ class _ArtistsTabViewState extends State<ArtistsTabView> {
               ),
             ),
             subtitle: Text(
-              '${group.trackCount} tracks • ${group.albums.length} albums',
+              '${plural(group.trackCount, 'song')} • ${plural(group.albums.length, 'album')}',
               style: const TextStyle(fontSize: 12.5, color: AppTheme.textSecondary),
             ),
             trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary),
             onTap: () {
-              setState(() {
-                _selectedArtist = group.artistName;
-              });
+              _openDetail(group.artistName);
             },
+          ),
           ),
         );
       },
@@ -120,7 +139,7 @@ class _ArtistsTabViewState extends State<ArtistsTabView> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: AppTheme.textPrimary),
-                onPressed: () => setState(() => _selectedArtist = null),
+                onPressed: () => _closeDetail(),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -138,7 +157,7 @@ class _ArtistsTabViewState extends State<ArtistsTabView> {
                       ),
                     ),
                     Text(
-                      '${artistSongs.length} tracks by artist',
+                      plural(artistSongs.length, 'song'),
                       style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                     ),
                   ],
@@ -146,7 +165,7 @@ class _ArtistsTabViewState extends State<ArtistsTabView> {
               ),
               ElevatedButton.icon(
                 onPressed: () {
-                  player.playSong(artistSongs.first, contextQueue: artistSongs);
+                  player.playSong(artistSongs.first, contextQueue: artistSongs, source: 'Artist • $artistName');
                 },
                 icon: const Icon(Icons.play_arrow_rounded, size: 18),
                 label: const Text('Play All'),
@@ -178,7 +197,7 @@ class _ArtistsTabViewState extends State<ArtistsTabView> {
                         index: index + 1,
                         isCurrent: isCurrent,
                         isPlaying: isPlaying,
-                        onTap: () => player.playSong(song, contextQueue: artistSongs),
+                        onTap: () => player.playSong(song, contextQueue: artistSongs, source: 'Artist • $artistName'),
                         onFavoriteToggle: () {
                           LibraryService.instance.toggleFavorite(song);
                         },

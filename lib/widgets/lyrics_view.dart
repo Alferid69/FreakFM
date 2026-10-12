@@ -577,49 +577,6 @@ class _LyricsViewState extends State<LyricsView> {
               ),
             ),
 
-            // Floating "Share" pill (Spotify style)
-            Positioned(
-              bottom: widget.isCompact ? 10 : 18,
-              left: widget.isCompact ? 12 : 20,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => _openShareLyrics(lyrics),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E2124),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF383838), width: 1),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.share_rounded, size: 13, color: AppTheme.spotifyWhite),
-                        SizedBox(width: 5),
-                        Text(
-                          'Share',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.spotifyWhite,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
             // Floating "Resume Sync" Chip displayed when user scrolled manually
             if (_userIsScrolling)
               Positioned(
@@ -715,49 +672,6 @@ class _LyricsViewState extends State<LyricsView> {
               ),
             );
           },
-        ),
-
-        // Floating "Share" pill (Spotify style)
-        Positioned(
-          bottom: widget.isCompact ? 10 : 18,
-          left: widget.isCompact ? 12 : 20,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => _openShareLyrics(lyrics),
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E2124),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF383838), width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.share_rounded, size: 13, color: AppTheme.spotifyWhite),
-                    SizedBox(width: 5),
-                    Text(
-                      'Share',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.spotifyWhite,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         ),
       ],
     );

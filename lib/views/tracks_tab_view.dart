@@ -3,280 +3,62 @@ import '../models/song.dart';
 import '../services/audio_player_service.dart';
 import '../services/library_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/formatters.dart';
 import '../widgets/track_list_tile.dart';
 
-class TracksTabView extends StatelessWidget {
+class TracksTabView extends StatefulWidget {
   final List<Song> songs;
+  final String searchQuery;
   final VoidCallback onShuffleAll;
-  final VoidCallback? onScanStorage;
+  final Future<void> Function()? onScanStorage;
   final VoidCallback? onAddFolder;
 
   const TracksTabView({
     super.key,
     required this.songs,
     required this.onShuffleAll,
+    this.searchQuery = '',
     this.onScanStorage,
     this.onAddFolder,
   });
 
   @override
+  State<TracksTabView> createState() => _TracksTabViewState();
+}
+
+class _TracksTabViewState extends State<TracksTabView> {
+  final ScrollController _scroll = ScrollController();
+
+  List<Song> get songs => widget.songs;
+  bool get _isSearching => widget.searchQuery.isNotEmpty;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _play(List<Song> list, String source, {bool shuffle = false}) {
+    if (list.isEmpty) return;
+    final player = AudioPlayerService.instance;
+    player.setShuffle(shuffle);
+    final start = shuffle ? (List.of(list)..shuffle()).first : list.first;
+    player.playSong(start, contextQueue: list, source: source);
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (songs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: const BoxDecoration(
-                  color: AppTheme.spotifyCard,
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Icon(Icons.music_note_rounded, size: 36, color: AppTheme.spotifyGreen),
-                ),
-              ),
-              const SizedBox(height: 18),
-              const Text(
-                'Your Library is Empty',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                  letterSpacing: -0.3,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Scan your storage to index your personal music collection.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: AppTheme.spotifyLightGrey, height: 1.4),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (onScanStorage != null)
-                    ElevatedButton.icon(
-                      onPressed: onScanStorage,
-                      icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('Scan Storage'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.spotifyGreen,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                      ),
-                    ),
-                  if (onAddFolder != null) ...[
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: onAddFolder,
-                      icon: const Icon(Icons.create_new_folder_outlined, size: 18),
-                      label: const Text('Add Folder'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.textPrimary,
-                        side: const BorderSide(color: AppTheme.borderMedium),
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
+      return _isSearching ? _buildNoResults() : _buildEmptyLibrary();
     }
 
     final player = AudioPlayerService.instance;
-    final likedCount = songs.where((s) => s.isFavorite).length;
-
-    // Derived top artists & albums for Spotify quick access tiles
-    final topArtist = songs.isNotEmpty ? songs.first.artist : 'Favorites';
-    final topAlbum = songs.isNotEmpty ? songs.first.album : 'Music';
-
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
+    final list = CustomScrollView(
+      controller: _scroll,
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       slivers: [
-        // Spotify Quick Access 2-Column Grid
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 550;
-                return GridView.count(
-                  crossAxisCount: isWide ? 4 : 2,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  childAspectRatio: isWide ? 3.0 : 2.7,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    // Tile 1: Liked Songs (Iconic Spotify Gradient Heart)
-                    _buildQuickTile(
-                      title: 'Liked Songs',
-                      subtitle: '$likedCount songs',
-                      leading: Container(
-                        width: 56,
-                        height: 56,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFF450AF5), Color(0xFF8E8EE5)],
-                          ),
-                          borderRadius: BorderRadius.horizontal(left: Radius.circular(4)),
-                        ),
-                        child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 22),
-                      ),
-                      onTap: () {
-                        final favs = songs.where((s) => s.isFavorite).toList();
-                        if (favs.isNotEmpty) {
-                          player.playSong(favs.first, contextQueue: favs);
-                        } else {
-                          onShuffleAll();
-                        }
-                      },
-                    ),
-
-                    // Tile 2: Top Artist
-                    _buildQuickTile(
-                      title: topArtist,
-                      subtitle: 'Artist',
-                      leading: Container(
-                        width: 56,
-                        height: 56,
-                        color: AppTheme.spotifyCardHighlight,
-                        child: const Icon(Icons.person_rounded, color: AppTheme.spotifyGreen, size: 24),
-                      ),
-                      onTap: () {
-                        final artistSongs = songs.where((s) => s.artist == topArtist).toList();
-                        if (artistSongs.isNotEmpty) {
-                          player.playSong(artistSongs.first, contextQueue: artistSongs);
-                        }
-                      },
-                    ),
-
-                    // Tile 3: Top Album
-                    _buildQuickTile(
-                      title: topAlbum,
-                      subtitle: 'Album',
-                      leading: Container(
-                        width: 56,
-                        height: 56,
-                        color: AppTheme.spotifyCardHighlight,
-                        child: const Icon(Icons.album_rounded, color: AppTheme.spotifyLightGrey, size: 24),
-                      ),
-                      onTap: () {
-                        final albumSongs = songs.where((s) => s.album == topAlbum).toList();
-                        if (albumSongs.isNotEmpty) {
-                          player.playSong(albumSongs.first, contextQueue: albumSongs);
-                        }
-                      },
-                    ),
-
-                    // Tile 4: Library Mix / Shuffle All
-                    _buildQuickTile(
-                      title: 'Library Mix',
-                      subtitle: '${songs.length} tracks',
-                      leading: Container(
-                        width: 56,
-                        height: 56,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFF1E3264), Color(0xFF1DB954)],
-                          ),
-                          borderRadius: BorderRadius.horizontal(left: Radius.circular(4)),
-                        ),
-                        child: const Icon(Icons.shuffle_rounded, color: Colors.white, size: 22),
-                      ),
-                      onTap: onShuffleAll,
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-
-        // Spotify Action Header (Track count + Giant Circular Spotify Green Shuffle Button)
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'All Songs',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textPrimary,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${songs.length} tracks in collection',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: AppTheme.spotifyLightGrey,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-
-                // Spotify Iconic Green Play / Shuffle Circle (50x50)
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: AppTheme.spotifyGreen,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.spotifyGreen.withValues(alpha: 0.35),
-                        offset: const Offset(0, 4),
-                        blurRadius: 12,
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: onShuffleAll,
-                      customBorder: const CircleBorder(),
-                      child: const Center(
-                        child: Icon(
-                          Icons.shuffle_rounded,
-                          color: Color(0xFF000000),
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // Virtualized Track List
+        if (!_isSearching) SliverToBoxAdapter(child: _buildQuickTiles()),
+        SliverToBoxAdapter(child: _buildHeader()),
         ValueListenableBuilder<Song?>(
           valueListenable: player.currentSong,
           builder: (context, currentSong, _) {
@@ -289,22 +71,17 @@ class TracksTabView extends StatelessWidget {
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final song = songs[index];
-                        final isCurrent = currentSong?.id == song.id;
-
                         return TrackListTile(
                           song: song,
                           index: index + 1,
-                          isCurrent: isCurrent,
+                          isCurrent: currentSong?.id == song.id,
                           isPlaying: isPlaying,
-                          onTap: () {
-                            player.playSong(song, contextQueue: songs);
-                          },
-                          onFavoriteToggle: () {
-                            LibraryService.instance.toggleFavorite(song);
-                          },
-                          onMoreOptions: () {
-                            _showTrackDetailsModal(context, song);
-                          },
+                          onTap: () => player.playSong(
+                            song,
+                            contextQueue: songs,
+                            source: _isSearching ? 'Search results' : 'All songs',
+                          ),
+                          onFavoriteToggle: () => LibraryService.instance.toggleFavorite(song),
                         );
                       },
                       childCount: songs.length,
@@ -317,131 +94,297 @@ class TracksTabView extends StatelessWidget {
         ),
       ],
     );
+
+    // Draggable thumb for jumping through large libraries; pull down to rescan.
+    final scrollable = Scrollbar(
+      controller: _scroll,
+      interactive: true,
+      thickness: 6,
+      radius: const Radius.circular(3),
+      child: list,
+    );
+    if (widget.onScanStorage == null || _isSearching) return scrollable;
+    return RefreshIndicator(
+      color: AppTheme.spotifyGreen,
+      backgroundColor: AppTheme.spotifyCardElevated,
+      onRefresh: widget.onScanStorage!,
+      child: scrollable,
+    );
   }
 
-  Widget _buildQuickTile({
-    required String title,
-    required String subtitle,
-    required Widget leading,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.spotifyCardHighlight,
-        borderRadius: BorderRadius.circular(4),
+  Widget _buildQuickTiles() {
+    final liked = songs.where((s) => s.isFavorite).toList();
+    final mostPlayed = (songs.where((s) => s.playCount > 0).toList()
+          ..sort((a, b) => b.playCount.compareTo(a.playCount)))
+        .take(50)
+        .toList();
+    final recent = (List.of(songs)..sort((a, b) => b.dateAdded.compareTo(a.dateAdded))).take(50).toList();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 550;
+          return GridView.count(
+            crossAxisCount: isWide ? 4 : 2,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: isWide ? 3.0 : 2.7,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _QuickTile(
+                key: const ValueKey('quick_liked'),
+                title: 'Liked Songs',
+                subtitle: liked.isEmpty ? 'Tap ♥ on a song' : plural(liked.length, 'song'),
+                icon: Icons.favorite_rounded,
+                gradient: const [Color(0xFF450AF5), Color(0xFF8E8EE5)],
+                onTap: liked.isEmpty ? null : () => _play(liked, 'Liked Songs'),
+              ),
+              _QuickTile(
+                key: const ValueKey('quick_most_played'),
+                title: 'Most Played',
+                subtitle: mostPlayed.isEmpty ? 'Nothing yet' : plural(mostPlayed.length, 'song'),
+                icon: Icons.trending_up_rounded,
+                gradient: const [Color(0xFFAF2896), Color(0xFF509BF5)],
+                onTap: mostPlayed.isEmpty ? null : () => _play(mostPlayed, 'Most Played'),
+              ),
+              _QuickTile(
+                key: const ValueKey('quick_recent'),
+                title: 'Recently Added',
+                subtitle: plural(recent.length, 'song'),
+                icon: Icons.schedule_rounded,
+                gradient: const [Color(0xFF8D67AB), Color(0xFF1E3264)],
+                onTap: () => _play(recent, 'Recently Added'),
+              ),
+              _QuickTile(
+                key: const ValueKey('quick_shuffle'),
+                title: 'Shuffle All',
+                subtitle: plural(songs.length, 'song'),
+                icon: Icons.shuffle_rounded,
+                gradient: const [Color(0xFF1E3264), Color(0xFF1DB954)],
+                onTap: widget.onShuffleAll,
+              ),
+            ],
+          );
+        },
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(4),
+    );
+  }
+
+  Widget _buildHeader() {
+    final totalMs = songs.fold<int>(0, (sum, s) => sum + s.durationMs);
+    final hours = totalMs ~/ 3600000;
+    final minutes = (totalMs % 3600000) ~/ 60000;
+    final length = hours > 0 ? '$hours h $minutes min' : '$minutes min';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isSearching ? 'Results' : 'All Songs',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${plural(songs.length, 'song')} • $length',
+                  style: const TextStyle(fontSize: 12.5, color: AppTheme.spotifyLightGrey, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('shuffle_all_button'),
+            iconSize: 26,
+            icon: const Icon(Icons.shuffle_rounded, color: AppTheme.spotifyLightGrey),
+            tooltip: 'Shuffle',
+            onPressed: () => _play(songs, _isSearching ? 'Search results' : 'All songs', shuffle: true),
+          ),
+          const SizedBox(width: 4),
+          Material(
+            color: AppTheme.spotifyGreen,
+            shape: const CircleBorder(),
+            elevation: 4,
+            shadowColor: AppTheme.spotifyGreen.withValues(alpha: 0.5),
+            child: InkWell(
+              key: const ValueKey('play_all_button'),
+              customBorder: const CircleBorder(),
+              onTap: () => _play(songs, _isSearching ? 'Search results' : 'All songs'),
+              child: const SizedBox(
+                width: 50,
+                height: 50,
+                child: Icon(Icons.play_arrow_rounded, color: Colors.black, size: 30, semanticLabel: 'Play all'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoResults() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off_rounded, size: 48, color: AppTheme.spotifySubdued),
+            const SizedBox(height: 14),
+            Text(
+              'No results for "${widget.searchQuery}"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Check the spelling, or search by artist, album, folder or genre.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppTheme.spotifyLightGrey, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyLibrary() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: const BoxDecoration(color: AppTheme.spotifyCard, shape: BoxShape.circle),
+              child: const Icon(Icons.library_music_rounded, size: 36, color: AppTheme.spotifyGreen),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'No music found yet',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.textPrimary, letterSpacing: -0.3),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'freak player looks in your Music and Download folders. '
+              'Keep songs somewhere else? Add that folder.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppTheme.spotifyLightGrey, height: 1.4),
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                if (widget.onScanStorage != null)
+                  ElevatedButton.icon(
+                    onPressed: widget.onScanStorage,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Scan again'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.spotifyGreen,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                  ),
+                if (widget.onAddFolder != null)
+                  OutlinedButton.icon(
+                    onPressed: widget.onAddFolder,
+                    icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+                    label: const Text('Add folder'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.textPrimary,
+                      side: const BorderSide(color: AppTheme.borderMedium),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final List<Color> gradient;
+  final VoidCallback? onTap;
+
+  const _QuickTile({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.gradient,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.spotifyCardHighlight,
+      borderRadius: BorderRadius.circular(6),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Opacity(
+          opacity: onTap == null ? 0.55 : 1,
           child: Row(
             children: [
-              leading,
-              const SizedBox(width: 8),
+              Container(
+                width: 56,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: gradient),
+                ),
+                child: Icon(icon, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 10),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          color: AppTheme.spotifyLightGrey,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.textPrimary, letterSpacing: -0.2),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10.5, color: AppTheme.spotifyLightGrey),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  void _showTrackDetailsModal(BuildContext context, Song song) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.spotifyCardElevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.spotifySubdued,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                song.title,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${song.artist} • ${song.album}',
-                style: const TextStyle(fontSize: 13, color: AppTheme.spotifyLightGrey),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.folder_open_rounded, color: AppTheme.spotifyGreen),
-                title: const Text('Folder', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
-                subtitle: Text(song.folder, style: const TextStyle(color: AppTheme.spotifyLightGrey, fontSize: 12)),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.waves_rounded, color: AppTheme.spotifyGreen),
-                title: const Text('Genre', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
-                subtitle: Text(song.genre, style: const TextStyle(color: AppTheme.spotifyLightGrey, fontSize: 12)),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.info_outline_rounded, color: AppTheme.spotifyGreen),
-                title: const Text('Audio Quality & Size', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
-                subtitle: Text(
-                  '${song.qualityBadge} • ${song.formattedFileSize}',
-                  style: const TextStyle(color: AppTheme.spotifyLightGrey, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

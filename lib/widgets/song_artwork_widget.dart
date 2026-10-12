@@ -32,7 +32,10 @@ class _SongArtworkWidgetState extends State<SongArtworkWidget> {
   String? _path;
 
   Song get song => widget.song;
-  double get size => widget.size;
+  // Resolved per build: an infinite requested size (e.g. a grid cell that
+  // should fill its slot) becomes the space actually available.
+  double _size = 0;
+  double get size => _size;
   double get borderRadius => widget.borderRadius;
   bool get isPlaying => widget.isPlaying;
   BoxFit get fit => widget.fit;
@@ -67,6 +70,17 @@ class _SongArtworkWidgetState extends State<SongArtworkWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.size.isFinite) return _buildSized(widget.size);
+    return LayoutBuilder(
+      builder: (context, box) {
+        final available = box.biggest.shortestSide;
+        return _buildSized(available.isFinite ? available : 300);
+      },
+    );
+  }
+
+  Widget _buildSized(double size) {
+    _size = size;
     final path = _path;
     if (path != null) return _buildImageContainer(path);
     return fallback ?? _buildPlaceholder();

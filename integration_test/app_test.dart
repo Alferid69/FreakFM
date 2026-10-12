@@ -50,11 +50,6 @@ class _SandboxPathProvider extends PathProviderPlatform {
   Future<String?> getExternalStoragePath() async => _dir('external');
 }
 
-/// Set with --dart-define=FREAK_NO_AUDIO_OUTPUT=true on machines without an
-/// audio output device (e.g. GitHub's Windows Server runners), where the OS
-/// can never start playback. Playback is still covered on the Android job.
-const bool _noAudioOutput = bool.fromEnvironment('FREAK_NO_AUDIO_OUTPUT');
-
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -217,7 +212,54 @@ void main() {
           reason: 'auto-advance on completion');
 
       await player.pause();
-    }, skip: _noAudioOutput);
+    });
+
+    testWidgets('Back closes an open album before leaving the tab', (tester) async {
+      await tester.pumpWidget(const FreakMusicPlayerApp());
+      await waitFor(tester, () => find.text('Alpha Tone').evaluate().isNotEmpty, reason: 'library to load');
+
+      await tester.tap(find.byKey(const ValueKey('tab_Albums')));
+      // Wait until the page transition has finished and the card can be hit.
+      await waitFor(tester, () => find.text('Integration').hitTestable().evaluate().isNotEmpty,
+          reason: 'album grid');
+      await tester.tap(find.text('Integration').hitTestable().first);
+      await waitFor(tester, () => find.text('Play All').evaluate().isNotEmpty, reason: 'album detail');
+
+      // First Back: back to the album grid, still on the Albums tab.
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await waitFor(tester, () => find.text('Play All').evaluate().isEmpty, reason: 'album closed');
+      expect(find.text('Integration'), findsWidgets);
+
+      // Second Back: return to the Songs tab instead of quitting. (Never send
+      // Back on the Songs tab here: that would ask the OS to close the app.)
+      expect(find.byKey(const ValueKey('play_all_button')).hitTestable(), findsNothing);
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await waitFor(tester, () => find.byKey(const ValueKey('play_all_button')).evaluate().isNotEmpty,
+          reason: 'songs tab');
+    });
+
+    testWidgets('song menu queues "Play next" right after the current song', (tester) async {
+      final player = AudioPlayerService.instance;
+      final alpha = seeded.firstWhere((s) => s.title == 'Alpha Tone');
+      final charlie = seeded.firstWhere((s) => s.title == 'Charlie Tone');
+      await player.playSong(alpha, contextQueue: [alpha]);
+
+      await tester.pumpWidget(const FreakMusicPlayerApp());
+      await waitFor(tester, () => find.byKey(ValueKey('more_${charlie.id}')).evaluate().isNotEmpty,
+          reason: 'track list');
+
+      await tester.tap(find.byKey(ValueKey('more_${charlie.id}')));
+      await waitFor(tester, () => find.byKey(const ValueKey('option_play_next')).evaluate().isNotEmpty,
+          reason: 'song menu');
+      await tester.tap(find.byKey(const ValueKey('option_play_next')));
+      await tester.pump();
+
+      final q = player.queue.value;
+      final i = player.queueIndex.value;
+      expect(q[i].id, alpha.id);
+      expect(q[i + 1].id, charlie.id);
+      await player.pause();
+    });
 
     testWidgets('a missing file reports an error instead of fake playback', (tester) async {
       final player = AudioPlayerService.instance;

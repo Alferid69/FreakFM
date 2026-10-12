@@ -68,9 +68,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                           _buildPlayerContent(context, song, isPlaying, player)
                         else ...[
                           _buildMiniTabBar(context, song),
-                          Expanded(
-                            child: _buildLyricsContent(context, song, isPlaying, player),
-                          ),
+                          Expanded(child: _buildLyricsContent(context, song, isPlaying, player)),
                         ],
                         _MiniProgressBar(song: song),
                       ],
@@ -86,12 +84,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
   }
 
   Widget _buildArtwork(Song song, bool isPlaying) {
-    return SongArtworkWidget(
-      song: song,
-      size: 42,
-      borderRadius: 4,
-      isPlaying: isPlaying,
-    );
+    return SongArtworkWidget(song: song, size: 42, borderRadius: 4, isPlaying: isPlaying);
   }
 
   Widget _buildMiniTabBar(BuildContext context, Song song) {
@@ -99,28 +92,16 @@ class _MiniPlayerState extends State<MiniPlayer> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: const BoxDecoration(
         color: Color(0xFF1E1E1E),
-        border: Border(
-          bottom: BorderSide(color: Color(0xFF2A2A2A), width: 0.8),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xFF2A2A2A), width: 0.8)),
       ),
       child: Row(
         children: [
           // Player Tab Pill
-          _buildTabPill(
-            index: 0,
-            icon: Icons.music_note_rounded,
-            label: 'Player',
-            isSelected: _selectedTab == 0,
-          ),
+          _buildTabPill(index: 0, icon: Icons.music_note_rounded, label: 'Player', isSelected: _selectedTab == 0),
           const SizedBox(width: 6),
 
           // Lyrics Tab Pill
-          _buildTabPill(
-            index: 1,
-            icon: Icons.lyrics_rounded,
-            label: 'Lyrics',
-            isSelected: _selectedTab == 1,
-          ),
+          _buildTabPill(index: 1, icon: Icons.lyrics_rounded, label: 'Lyrics', isSelected: _selectedTab == 1),
 
           const Spacer(),
 
@@ -134,19 +115,13 @@ class _MiniPlayerState extends State<MiniPlayer> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.spotifyLightGrey,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  style: const TextStyle(fontSize: 11, color: AppTheme.spotifyLightGrey, fontWeight: FontWeight.w500),
                 ),
               ),
             ),
 
           // Volume Quick Control
-          const VolumeControllerWidget(
-            mode: VolumeDisplayMode.popup,
-          ),
+          const VolumeControllerWidget(mode: VolumeDisplayMode.popup),
           const SizedBox(width: 4),
 
           // Close / Return to Player
@@ -182,31 +157,20 @@ class _MiniPlayerState extends State<MiniPlayer> {
     );
   }
 
-  Widget _buildTabPill({
-    required int index,
-    required IconData icon,
-    required String label,
-    required bool isSelected,
-  }) {
+  Widget _buildTabPill({required int index, required IconData icon, required String label, required bool isSelected}) {
     return InkWell(
       onTap: () => setState(() => _selectedTab = index),
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected
-              ? AppTheme.spotifyGreen
-              : AppTheme.spotifyCardHighlight,
+          color: isSelected ? AppTheme.spotifyGreen : AppTheme.spotifyCardHighlight,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 13,
-              color: isSelected ? AppTheme.spotifyDeepBlack : AppTheme.spotifyLightGrey,
-            ),
+            Icon(icon, size: 13, color: isSelected ? AppTheme.spotifyDeepBlack : AppTheme.spotifyLightGrey),
             const SizedBox(width: 4),
             Text(
               label,
@@ -222,150 +186,137 @@ class _MiniPlayerState extends State<MiniPlayer> {
     );
   }
 
-  Widget _buildPlayerContent(
-    BuildContext context,
-    Song song,
-    bool isPlaying,
-    AudioPlayerService player,
-  ) {
-    return InkWell(
-      onTap: () {
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (context) => const FullPlayerSheet(initialTab: 0),
-        );
+  Widget _buildPlayerContent(BuildContext context, Song song, bool isPlaying, AudioPlayerService player) {
+    void openFullPlayer() => showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const FullPlayerSheet(initialTab: 0),
+    );
+
+    // Swipe left/right to change track, swipe up to expand.
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v < -250) {
+          player.next();
+        } else if (v > 250) {
+          player.previous();
+        }
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        child: Row(
-          children: [
-            // Square Spotify Album Art
-            _buildArtwork(song, isPlaying),
-            const SizedBox(width: 12),
+      onVerticalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) < -250) openFullPlayer();
+      },
+      child: InkWell(
+        onTap: openFullPlayer,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            children: [
+              // Square Spotify Album Art
+              _buildArtwork(song, isPlaying),
+              const SizedBox(width: 12),
 
-            // Title & Artist
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    song.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.spotifyWhite,
-                      letterSpacing: -0.2,
+              // Title & Artist
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.spotifyWhite,
+                        letterSpacing: -0.2,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    song.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.spotifyLightGrey,
-                      fontWeight: FontWeight.w400,
+                    const SizedBox(height: 2),
+                    Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.spotifyLightGrey,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-            // Lyrics Quick Button
-            IconButton(
-              iconSize: 20,
-              splashRadius: 20,
-              padding: const EdgeInsets.all(6),
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              icon: const Icon(
-                Icons.lyrics_rounded,
-                color: AppTheme.spotifyLightGrey,
+              // Lyrics Quick Button
+              IconButton(
+                iconSize: 20,
+                splashRadius: 20,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(Icons.lyrics_rounded, color: AppTheme.spotifyLightGrey),
+                tooltip: 'Lyrics',
+                onPressed: () {
+                  setState(() => _selectedTab = 1);
+                },
               ),
-              tooltip: 'Lyrics',
-              onPressed: () {
-                setState(() => _selectedTab = 1);
-              },
-            ),
 
-            // Favorite Toggle
-            IconButton(
-              iconSize: 22,
-              splashRadius: 20,
-              padding: const EdgeInsets.all(6),
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              icon: Icon(
-                song.isFavorite
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                color: song.isFavorite
-                    ? AppTheme.spotifyGreen
-                    : AppTheme.spotifyLightGrey,
+              // Favorite Toggle
+              IconButton(
+                iconSize: 22,
+                splashRadius: 20,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: Icon(
+                  song.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: song.isFavorite ? AppTheme.spotifyGreen : AppTheme.spotifyLightGrey,
+                ),
+                onPressed: () {
+                  LibraryService.instance.toggleFavorite(song);
+                },
               ),
-              onPressed: () {
-                LibraryService.instance.toggleFavorite(song);
-              },
-            ),
 
-            // Play / Pause
-            IconButton(
-              iconSize: 32,
-              splashRadius: 22,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              icon: Icon(
-                isPlaying
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
-                color: AppTheme.spotifyWhite,
+              // Play / Pause
+              IconButton(
+                iconSize: 32,
+                splashRadius: 22,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: AppTheme.spotifyWhite),
+                onPressed: () => player.togglePlayPause(),
               ),
-              onPressed: () => player.togglePlayPause(),
-            ),
 
-            // Skip Next
-            IconButton(
-              iconSize: 26,
-              splashRadius: 20,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-              icon: const Icon(
-                Icons.skip_next_rounded,
-                color: AppTheme.spotifyWhite,
+              // Skip Next
+              IconButton(
+                iconSize: 26,
+                splashRadius: 20,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                icon: const Icon(Icons.skip_next_rounded, color: AppTheme.spotifyWhite),
+                onPressed: () => player.next(),
               ),
-              onPressed: () => player.next(),
-            ),
 
-            // Responsive Volume Controller
-            Builder(
-              builder: (ctx) {
-                final isWide = MediaQuery.of(ctx).size.width >= 640;
-                if (!isWide) return const SizedBox.shrink();
-                return const Padding(
-                  padding: EdgeInsets.only(left: 4),
-                  child: VolumeControllerWidget(
-                    mode: VolumeDisplayMode.popup,
-                  ),
-                );
-              },
-            ),
-          ],
+              // Responsive Volume Controller
+              Builder(
+                builder: (ctx) {
+                  final isWide = MediaQuery.of(ctx).size.width >= 640;
+                  if (!isWide) return const SizedBox.shrink();
+                  return const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: VolumeControllerWidget(mode: VolumeDisplayMode.popup),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildLyricsContent(
-    BuildContext context,
-    Song song,
-    bool isPlaying,
-    AudioPlayerService player,
-  ) {
+  Widget _buildLyricsContent(BuildContext context, Song song, bool isPlaying, AudioPlayerService player) {
     return Column(
       children: [
         // Lyrics View Body
@@ -389,9 +340,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: const BoxDecoration(
             color: Color(0xFF1E1E1E),
-            border: Border(
-              top: BorderSide(color: Color(0xFF2A2A2A), width: 0.8),
-            ),
+            border: Border(top: BorderSide(color: Color(0xFF2A2A2A), width: 0.8)),
           ),
           child: Row(
             children: [
@@ -400,8 +349,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 iconSize: 20,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                icon: const Icon(Icons.skip_previous_rounded,
-                    color: AppTheme.spotifyLightGrey),
+                icon: const Icon(Icons.skip_previous_rounded, color: AppTheme.spotifyLightGrey),
                 onPressed: () => player.previous(),
               ),
               const SizedBox(width: 6),
@@ -410,10 +358,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               Container(
                 width: 32,
                 height: 32,
-                decoration: const BoxDecoration(
-                  color: AppTheme.spotifyGreen,
-                  shape: BoxShape.circle,
-                ),
+                decoration: const BoxDecoration(color: AppTheme.spotifyGreen, shape: BoxShape.circle),
                 child: IconButton(
                   iconSize: 18,
                   padding: EdgeInsets.zero,
@@ -431,8 +376,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 iconSize: 20,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                icon: const Icon(Icons.skip_next_rounded,
-                    color: AppTheme.spotifyLightGrey),
+                icon: const Icon(Icons.skip_next_rounded, color: AppTheme.spotifyLightGrey),
                 onPressed: () => player.next(),
               ),
               const SizedBox(width: 10),
@@ -442,9 +386,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               const Spacer(),
 
               // Volume Controller
-              const VolumeControllerWidget(
-                mode: VolumeDisplayMode.popup,
-              ),
+              const VolumeControllerWidget(mode: VolumeDisplayMode.popup),
               const SizedBox(width: 4),
 
               // Favorite
@@ -453,12 +395,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 icon: Icon(
-                  song.isFavorite
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  color: song.isFavorite
-                      ? AppTheme.spotifyGreen
-                      : AppTheme.spotifyLightGrey,
+                  song.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: song.isFavorite ? AppTheme.spotifyGreen : AppTheme.spotifyLightGrey,
                 ),
                 onPressed: () {
                   LibraryService.instance.toggleFavorite(song);
@@ -481,17 +419,13 @@ class _SpinningVinylWidget extends StatefulWidget {
   State<_SpinningVinylWidget> createState() => _SpinningVinylWidgetState();
 }
 
-class _SpinningVinylWidgetState extends State<_SpinningVinylWidget>
-    with SingleTickerProviderStateMixin {
+class _SpinningVinylWidgetState extends State<_SpinningVinylWidget> with SingleTickerProviderStateMixin {
   late AnimationController _rotationController;
 
   @override
   void initState() {
     super.initState();
-    _rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 10),
-    );
+    _rotationController = AnimationController(vsync: this, duration: const Duration(seconds: 10));
 
     if (widget.isPlaying) {
       _rotationController.repeat();
@@ -526,40 +460,23 @@ class _SpinningVinylWidgetState extends State<_SpinningVinylWidget>
         decoration: BoxDecoration(
           color: const Color(0xFF14171E),
           shape: BoxShape.circle,
-          border: Border.all(
-              color: AppTheme.accentAmberLight.withValues(alpha: 0.5), width: 1.5),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x33000000),
-              offset: Offset(0, 2),
-              blurRadius: 6,
-            ),
-          ],
+          border: Border.all(color: AppTheme.accentAmberLight.withValues(alpha: 0.5), width: 1.5),
+          boxShadow: const [BoxShadow(color: Color(0x33000000), offset: Offset(0, 2), blurRadius: 6)],
         ),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            const Icon(
-              Icons.album_rounded,
-              size: 42,
-              color: AppTheme.borderFocus,
-            ),
+            const Icon(Icons.album_rounded, size: 42, color: AppTheme.borderFocus),
             Container(
               width: 14,
               height: 14,
-              decoration: const BoxDecoration(
-                color: AppTheme.accentAmber,
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(color: AppTheme.accentAmber, shape: BoxShape.circle),
               child: const Center(
                 child: SizedBox(
                   width: 4,
                   height: 4,
                   child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AppTheme.bgObsidian,
-                      shape: BoxShape.circle,
-                    ),
+                    decoration: BoxDecoration(color: AppTheme.bgObsidian, shape: BoxShape.circle),
                   ),
                 ),
               ),

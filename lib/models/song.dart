@@ -1,4 +1,5 @@
 import 'package:path/path.dart' as p;
+import '../utils/formatters.dart';
 
 class Song {
   final String id;
@@ -53,12 +54,7 @@ class Song {
     return ext.isEmpty ? 'AUDIO' : ext;
   }
 
-  String get formattedDuration {
-    final totalSeconds = (durationMs / 1000).round();
-    final minutes = totalSeconds ~/ 60;
-    final seconds = totalSeconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  }
+  String get formattedDuration => formatDuration(Duration(milliseconds: durationMs));
 
   String get formattedFileSize {
     if (fileSize <= 0) return '0 KB';
