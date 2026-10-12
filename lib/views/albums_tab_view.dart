@@ -30,7 +30,7 @@ class _AlbumsTabViewState extends State<AlbumsTabView> {
 
   void _closeDetail() {
     DetailBackHandler.unregister('albums');
-    if (mounted) _closeDetail();
+    if (mounted) setState(() => _selectedAlbum = null);
   }
 
   @override

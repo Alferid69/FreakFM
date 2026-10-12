@@ -29,7 +29,7 @@ class _ArtistsTabViewState extends State<ArtistsTabView> {
 
   void _closeDetail() {
     DetailBackHandler.unregister('artists');
-    if (mounted) _closeDetail();
+    if (mounted) setState(() => _selectedArtist = null);
   }
 
   @override

@@ -30,7 +30,7 @@ class _FoldersTabViewState extends State<FoldersTabView> {
 
   void _closeDetail() {
     DetailBackHandler.unregister('folders');
-    if (mounted) _closeDetail();
+    if (mounted) setState(() => _selectedFolderPath = null);
   }
 
   @override

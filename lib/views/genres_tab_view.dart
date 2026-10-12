@@ -29,7 +29,7 @@ class _GenresTabViewState extends State<GenresTabView> {
 
   void _closeDetail() {
     DetailBackHandler.unregister('genres');
-    if (mounted) _closeDetail();
+    if (mounted) setState(() => _selectedGenre = null);
   }
 
   @override
