@@ -93,11 +93,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          flutter test integration_test -d windows --reporter expanded 2>&1 | tee integration.log
+          # Hosted Windows runners have no audio output device, so the real
+          # playback test is skipped here (it runs on the Android emulator).
+          flutter test integration_test -d windows --reporter expanded             --dart-define=FREAK_NO_AUDIO_OUTPUT=true 2>&1 | tee integration.log
 
       # Surface the failure details as annotations on the run summary.
       - name: Report failures
         if: failure()
         shell: bash
         run: |
-          grep -E "Expected|Actual|Which|Timed out|EXCEPTION|Exception|Error|error|\[E\]|Playback" integration.log             | head -40 | while IFS= read -r line; do echo "::error::${line}"; done
+          grep -E "Expected|Actual|Which|Timed out|EXCEPTION|Exception|Error|error|\[E\]|Playback" integration.log | head -40 | while IFS= read -r line; do echo "::error::${line}"; done

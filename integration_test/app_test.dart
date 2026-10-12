@@ -50,6 +50,11 @@ class _SandboxPathProvider extends PathProviderPlatform {
   Future<String?> getExternalStoragePath() async => _dir('external');
 }
 
+/// Set with --dart-define=FREAK_NO_AUDIO_OUTPUT=true on machines without an
+/// audio output device (e.g. GitHub's Windows Server runners), where the OS
+/// can never start playback. Playback is still covered on the Android job.
+const bool _noAudioOutput = bool.fromEnvironment('FREAK_NO_AUDIO_OUTPUT');
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -212,7 +217,7 @@ void main() {
           reason: 'auto-advance on completion');
 
       await player.pause();
-    });
+    }, skip: _noAudioOutput);
 
     testWidgets('a missing file reports an error instead of fake playback', (tester) async {
       final player = AudioPlayerService.instance;
