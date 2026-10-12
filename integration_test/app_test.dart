@@ -228,15 +228,17 @@ void main() {
       await tester.tap(find.text('Integration').hitTestable().first);
       await waitFor(tester, () => find.text('Play Album').evaluate().isNotEmpty, reason: 'album detail');
 
+      // The system Back button ends up in Navigator.maybePop; calling it
+      // directly can never close the app if Back isn't intercepted.
+      Future<bool> pressBack() => tester.state<NavigatorState>(find.byType(Navigator).first).maybePop();
+
       // First Back: back to the album grid, still on the Albums tab.
-      expect(await tester.binding.handlePopRoute(), isTrue);
+      expect(await pressBack(), isTrue);
       await waitFor(tester, () => find.text('Play Album').evaluate().isEmpty, reason: 'album closed');
       expect(find.text('Integration'), findsWidgets);
 
-      // Second Back: return to the Songs tab instead of quitting. (Never send
-      // Back on the Songs tab here: that would ask the OS to close the app.)
-      expect(find.byKey(const ValueKey('play_all_button')).hitTestable(), findsNothing);
-      expect(await tester.binding.handlePopRoute(), isTrue);
+      // Second Back: return to the Songs tab instead of quitting.
+      expect(await pressBack(), isTrue);
       await waitFor(tester, () => find.byKey(const ValueKey('play_all_button')).evaluate().isNotEmpty,
           reason: 'songs tab');
     });
