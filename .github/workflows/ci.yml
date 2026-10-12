@@ -71,4 +71,11 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          script: flutter test integration_test -d emulator-5554 --reporter expanded
+          script: bash -c "set -o pipefail; flutter test integration_test -d emulator-5554 --reporter expanded 2>&1 | tee integration.log"
+
+      # Surface failure details as annotations on the run summary.
+      - name: Report failures
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "Expected|Actual|Which|Timed out|EXCEPTION|Exception|Bad state|\[E\]|did not complete|Playback error" integration.log             | head -40 | while IFS= read -r line; do echo "::error::${line}"; done

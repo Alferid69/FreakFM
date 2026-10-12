@@ -218,6 +218,9 @@ void main() {
       await tester.pumpWidget(const FreakMusicPlayerApp());
       await waitFor(tester, () => find.text('Alpha Tone').evaluate().isNotEmpty, reason: 'library to load');
 
+      // On phone widths the Albums pill starts off-screen; scroll it in first.
+      await tester.ensureVisible(find.byKey(const ValueKey('tab_Albums')));
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.byKey(const ValueKey('tab_Albums')));
       // Wait until the page transition has finished and the card can be hit.
       await waitFor(tester, () => find.text('Integration').hitTestable().evaluate().isNotEmpty,
