@@ -265,7 +265,8 @@ void main() {
       expect(await pressBack(), isTrue);
       await waitFor(tester, () => find.byKey(const ValueKey('collection_play')).hitTestable().evaluate().isEmpty,
           reason: 'album closed');
-      expect(find.text('Integration').hitTestable(), findsWidgets);
+      // The list becomes tappable once the closing animation has finished.
+      await waitVisible(tester, find.text('Integration'), 'album list after Back');
 
       // Second Back: to Home instead of quitting.
       expect(await pressBack(), isTrue);
