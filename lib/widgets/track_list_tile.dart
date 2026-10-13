@@ -5,11 +5,15 @@ import 'song_artwork_widget.dart';
 import 'song_options_sheet.dart';
 import 'waveform_visualizer.dart';
 
+/// Spotify-style song row: cover, title (green while playing), artist,
+/// a like toggle (+ / green tick) and the ⋮ menu. Long-press opens the menu.
 class TrackListTile extends StatelessWidget {
   final Song song;
   final bool isCurrent;
   final bool isPlaying;
   final int? index;
+  final bool showArtwork;
+  final String? subtitle;
   final VoidCallback onTap;
   final VoidCallback onFavoriteToggle;
   final VoidCallback? onMoreOptions;
@@ -20,6 +24,8 @@ class TrackListTile extends StatelessWidget {
     required this.isCurrent,
     required this.isPlaying,
     this.index,
+    this.showArtwork = true,
+    this.subtitle,
     required this.onTap,
     required this.onFavoriteToggle,
     this.onMoreOptions,
@@ -27,157 +33,74 @@ class TrackListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: isCurrent ? AppTheme.spotifyCardHighlight : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          key: ValueKey('track_${song.id}'),
-          onTap: onTap,
-          onLongPress: () => (onMoreOptions ?? () => showSongOptions(context, song))(),
-          borderRadius: BorderRadius.circular(8),
-          hoverColor: AppTheme.spotifyCardHighlight,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              children: [
-                // Track Index or Spotify Playing Visualizer
-                SizedBox(
-                  width: 28,
-                  child: Center(
-                    child: isCurrent
-                        ? WaveformVisualizer(
-                            isPlaying: isPlaying,
-                            height: 14,
-                            barWidth: 2.5,
-                            barCount: 3,
-                          )
-                        : Text(
-                            index != null ? '$index' : '•',
-                            style: const TextStyle(
-                              color: AppTheme.spotifySubdued,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 8),
+    final openMenu = onMoreOptions ?? () => showSongOptions(context, song);
 
-                // Spotify Square Album Cover (46x46) with song's real artwork
-                SongArtworkWidget(
-                  song: song,
-                  size: 46,
-                  borderRadius: 4,
-                  isPlaying: isCurrent && isPlaying,
-                ),
-                const SizedBox(width: 12),
-
-                // Title & Artist
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+    return InkWell(
+      key: ValueKey('track_${song.id}'),
+      onTap: onTap,
+      onLongPress: openMenu,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, showArtwork ? 6 : 8, 4, showArtwork ? 6 : 8),
+        child: Row(
+          children: [
+            if (showArtwork) ...[
+              SongArtworkWidget(song: song, size: 48, borderRadius: 2, showPlayingBadge: false),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Text(
-                        song.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w600,
-                          color: isCurrent
-                              ? AppTheme.spotifyGreen
-                              : AppTheme.textPrimary,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${song.artist} • ${song.album}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                color: AppTheme.spotifyLightGrey,
-                                letterSpacing: -0.1,
-                              ),
-                            ),
+                      if (isCurrent && isPlaying) ...[
+                        const WaveformVisualizer(isPlaying: true, barCount: 3, height: 11, barWidth: 2.2),
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(
+                        child: Text(
+                          song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: isCurrent ? AppTheme.spotifyGreen : AppTheme.textPrimary,
                           ),
-                          if (song.filePath.endsWith('.flac')) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: AppTheme.spotifyCardElevated,
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                              child: const Text(
-                                'LOSSLESS',
-                                style: TextStyle(
-                                  fontSize: 8.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppTheme.spotifySubdued,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-
-                // Duration
-                Text(
-                  song.formattedDuration,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isCurrent ? AppTheme.spotifyGreen : AppTheme.spotifyLightGrey,
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle ?? song.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13.5, color: AppTheme.spotifyLightGrey),
                   ),
-                ),
-                const SizedBox(width: 4),
-
-                // Spotify Heart Button
-                IconButton(
-                  key: ValueKey('favorite_${song.id}'),
-                  iconSize: 20,
-                  splashRadius: 20,
-                  padding: const EdgeInsets.all(8),
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  icon: Icon(
-                    song.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                    color: song.isFavorite ? AppTheme.spotifyGreen : AppTheme.spotifySubdued,
-                  ),
-                  onPressed: onFavoriteToggle,
-                  tooltip: song.isFavorite ? 'Remove from Liked Songs' : 'Save to Liked Songs',
-                ),
-
-                // More Menu Button
-                IconButton(
-                  key: ValueKey('more_${song.id}'),
-                  iconSize: 18,
-                  splashRadius: 18,
-                  padding: const EdgeInsets.all(6),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 36),
-                  icon: const Icon(Icons.more_vert_rounded, color: AppTheme.spotifyLightGrey),
-                  tooltip: 'More options',
-                  onPressed: onMoreOptions ?? () => showSongOptions(context, song),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            IconButton(
+              key: ValueKey('favorite_${song.id}'),
+              iconSize: 22,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                song.isFavorite ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded,
+                color: song.isFavorite ? AppTheme.spotifyGreen : AppTheme.spotifyLightGrey,
+              ),
+              onPressed: onFavoriteToggle,
+              tooltip: song.isFavorite ? 'Remove from Liked Songs' : 'Save to Liked Songs',
+            ),
+            IconButton(
+              key: ValueKey('more_${song.id}'),
+              iconSize: 20,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.more_vert_rounded, color: AppTheme.spotifyLightGrey),
+              tooltip: 'More options',
+              onPressed: openMenu,
+            ),
+          ],
         ),
       ),
     );

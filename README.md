@@ -3,10 +3,11 @@
 A Spotify-inspired **offline** music player for **Android** and **Windows**, built with Flutter: your local library, synced lyrics, a real equalizer, and proper lock-screen / Bluetooth controls — no accounts, ads or tracking.
 
 <p align="center">
-  <img src="docs/screenshots/library.png" width="230" alt="Library with quick access tiles and the song list">
-  <img src="docs/screenshots/player.png" width="230" alt="Full-screen player">
-  <img src="docs/screenshots/song-menu.png" width="230" alt="Song menu with Play next and Add to queue">
-  <img src="docs/screenshots/albums.png" width="230" alt="Album grid">
+  <img src="docs/screenshots/home.png" width="200" alt="Home: shortcut grid and shelves">
+  <img src="docs/screenshots/album.png" width="200" alt="Album page with cover-coloured header">
+  <img src="docs/screenshots/now-playing.png" width="200" alt="Now Playing">
+  <img src="docs/screenshots/library.png" width="200" alt="Your Library">
+  <img src="docs/screenshots/search.png" width="200" alt="Search results">
 </p>
 
 **[⬇️ Download the latest APK](https://github.com/Alferid69/freak_shit_show/releases/latest)** — pick `arm64-v8a` if you're not sure which one you need.
@@ -17,10 +18,10 @@ A Spotify-inspired **offline** music player for **Android** and **Windows**, bui
 
 ### Library
 - **Finds all your music.** Every song Android's media library knows about — anywhere on the phone or SD card — plus a scan of common folders (Music, Download, Telegram and WhatsApp audio, Snaptube/Vidmate, Bluetooth…) and any folder you add.
-- **You stay in control of folders.** Don't want something in your library (for example a Quran app's recitations or voice notes)? Hide that folder from the Folders tab or a song's ⋮ menu; manage added and hidden folders under **⋮ → Library folders**.
+- **You stay in control of folders.** Don't want something in your library (for example a Quran app's recitations or voice notes)? Hide that folder from its page or a song's ⋮ menu; manage added and hidden folders in **Settings** (tap your avatar).
 - **Nothing gets lost.** Likes, play counts and real track durations are saved automatically and survive rescans.
 - **Accurate tags.** Title, artist, album, genre, year, duration, bitrate and cover art are read from the file (MP3, FLAC, M4A, OGG/Opus, WAV…), with sensible fallbacks from the file name.
-- Browse by **Songs, Folders, Artists, Albums, Genres and Favorites**, with search across all of them and five sort orders.
+- Browse **albums, artists, folders and genres**, plus built-in playlists: **Liked Songs, All Songs, Most Played, Recently Added, Recently Played**.
 
 ### Playback
 - `just_audio` engine with **shuffle that remembers** what you heard (Previous goes back to it) and repeat off / all / one.
@@ -33,7 +34,7 @@ A Spotify-inspired **offline** music player for **Android** and **Windows**, bui
 
 ### Lyrics
 - Lyrics embedded in the file are used first, then free online sources (LRCLIB, Lyrics.ovh), choosing the result that matches the song's artist and length.
-- Synced lyrics auto-scroll with the music; tap a line to jump there. A live preview of the current line sits under the player controls.
+- Synced lyrics auto-scroll with the music on a cover-coloured, full-screen page; tap a line to jump there. A live lyrics card sits under the player controls.
 - Results are cached for offline use; "no lyrics" answers are remembered for a week.
 - **Share lyric cards**: pick up to 5 lines, choose a gradient, then share to any app or save the image to your gallery.
 
@@ -41,20 +42,21 @@ A Spotify-inspired **offline** music player for **Android** and **Windows**, bui
 
 ## 🎨 UI & UX
 
-The interface follows a Spotify-style dark design (see [`DESIGN.md`](DESIGN.md)). Things worth knowing:
+The app is laid out like Spotify (design notes in [`DESIGN.md`](DESIGN.md)): a bottom bar with **Home, Search and Your Library**, a floating mini player, and colour taken from your cover art throughout.
 
-| Where | What you can do |
+| Where | What you get |
 | --- | --- |
-| **Top tabs** | Swipe between tabs or tap a pill — the selected pill always scrolls into view. The right edge fades when more tabs are off-screen. |
-| **Songs tab** | Quick tiles for **Liked Songs, Most Played, Recently Added, Shuffle All**, a big ▶ to play everything in order and 🔀 to shuffle. **Pull down to rescan.** Drag the scrollbar to jump through large libraries. |
-| **Any song** | Tap to play. Tap **⋮** or **long-press** for *Play next, Add to queue, Like, Song info, Hide this folder*. |
-| **Mini player** | Tap or **swipe up** to open the full player; **swipe left/right** to skip tracks. |
-| **Full player** | Shows where the music is *playing from* (album, artist, folder, search, Liked Songs…). Dragging the seek bar previews the time and seeks once you let go. Speed and EQ chips sit under the transport; the queue and sleep timer are in the header. |
-| **Albums / Artists / Genres / Folders** | Open one to see its songs. The **system Back button** closes it first, then returns to Songs, and only then leaves the app. |
-| **Search** | Filters songs, artists, albums, folders and genres as you type; shows a clear "No results" message instead of an empty library. |
-| **Desktop** | Windows gets an in-app volume slider (phones use the hardware buttons). |
+| **Home** | "Good morning/afternoon/evening", filter pills (All / Albums / Artists), a two-column grid of shortcuts (Liked Songs, recently played albums, Most Played…), then shelves: **Recently played, Your top artists, Your mixes** (one per genre) and **Recently added**. The top of the page is tinted with your latest cover. |
+| **Search** | White search bar, coloured **Browse all** genre tiles with tilted covers (your top genres first). Typing shows songs, artists, albums, genres and folders, or "Couldn't find…" when nothing matches. |
+| **Your Library** | Pinned **Liked Songs** and **All Songs**, then albums and artists. Filter pills (Artists, Albums, Folders, Genres), sort by Recents / Recently added / Alphabetical / Most played, list or grid view, pull down to rescan, **+** to add a folder. |
+| **Album / artist / playlist pages** | Header gradient from the cover colour, big cover (round for artists), title and details, ⋮ menu (shuffle play, add to queue, hide folder), shuffle toggle and the green ▶ button. Artist pages add a Discography shelf. The title appears in the top bar as you scroll. |
+| **Songs** | Tap to play. The **+** saves to Liked Songs (green tick when saved). **⋮** or long-press: *Play next, Add to queue, Like, Song info, Hide this folder*. The playing song is green with a small equalizer. |
+| **Mini player** | Floats above the bottom bar, tinted with the cover colour, with like and play/pause and a thin progress line. Tap or **swipe up** to expand; **swipe left/right** to skip. |
+| **Now Playing** | Full screen on the cover's colour: "Playing from …", large cover (swipe to skip), title + like, seek bar that seeks on release, shuffle/repeat with green dots, sleep timer and queue. Scroll for the **lyrics card**, **Next in queue** and **About this song**. ⋮ has Go to album/artist, speed and sleep timer. |
+| **Lyrics** | Full-screen on a bright cover colour: big bold lines, the current line white and upcoming lines dimmed; share lyric cards from the top right. |
+| **Back button** | Closes the open page first, then returns to Home, and only then leaves the app. Re-tapping a tab jumps back to its first page. |
 
-Polish: tooltips on icon buttons, screen-reader labels on the tab pills, correct singular/plural counts ("1 song"), and times shown as `3:07` / `1:02:07`.
+Typography is **Figtree** (bundled, SIL Open Font License), close to Spotify's geometric style. Counts read naturally ("1 song"), times as `3:07`, and long titles never overflow, even on small phones.
 
 ---
 

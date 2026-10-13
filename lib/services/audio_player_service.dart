@@ -111,19 +111,25 @@ class AudioPlayerService {
     }));
 
     _subs.add(_player.playerStateStream.listen((state) {
-      final completed = state.processingState == ProcessingState.completed;
-      final playing = state.playing && !completed;
+      if (state.processingState == ProcessingState.completed) {
+        // A song ending is a transition, not a stop. Publishing "paused" here
+        // makes Android drop the media foreground service, and in the
+        // background the app can then be frozen before the next song starts
+        // (music silently stopping after a few tracks). Whatever happens next
+        // (next song, repeat, or a real stop at the end) reports its own state.
+        if (!_completionHandled) {
+          _completionHandled = true;
+          _handleTrackCompleted();
+        }
+        return;
+      }
+      final playing = state.playing;
       final buffering = state.processingState == ProcessingState.loading ||
           state.processingState == ProcessingState.buffering;
       final changed = playing != isPlaying.value || buffering != isBuffering.value;
       isPlaying.value = playing;
       isBuffering.value = buffering;
       if (changed) _broadcastPlaybackState();
-
-      if (completed && !_completionHandled) {
-        _completionHandled = true;
-        _handleTrackCompleted();
-      }
     }));
   }
 
@@ -214,14 +220,16 @@ class AudioPlayerService {
       _loadInFlight = false;
       debugPrint('Playback error for ${song.filePath}: $e');
       _errors.add('Can\'t play "${song.title}" — the file is missing or unsupported.');
-      isPlaying.value = false;
-      _broadcastPlaybackState();
-
+      // Skip straight on without publishing a stop in between (see the
+      // player-state listener); only report "not playing" when nothing in
+      // the queue is playable.
       _consecutiveFailures++;
       if (_consecutiveFailures < _queue.songs.length) {
         await next();
       } else {
         _consecutiveFailures = 0;
+        isPlaying.value = false;
+        _broadcastPlaybackState();
       }
     }
   }
@@ -243,8 +251,7 @@ class AudioPlayerService {
   void _handleTrackCompleted() {
     if (sleepAtEndOfTrack.value) {
       sleepAtEndOfTrack.value = false;
-      unawaited(_player.pause());
-      unawaited(_player.seek(Duration.zero));
+      unawaited(_stopAtStart());
       return;
     }
 
@@ -255,6 +262,15 @@ class AudioPlayerService {
       return;
     }
     unawaited(next(fromCompletion: true));
+  }
+
+  /// A real stop (end of queue, sleep timer): pause, rewind, and report it.
+  Future<void> _stopAtStart() async {
+    await _player.pause();
+    await _seekPlatform(Duration.zero);
+    isPlaying.value = false;
+    isBuffering.value = false;
+    _broadcastPlaybackState();
   }
 
   Future<void> play() async {
@@ -357,8 +373,7 @@ class AudioPlayerService {
     final idx = _queue.advance(repeatMode.value);
     if (idx == null) {
       // End of the queue with repeat off: stop at the start of the last song.
-      await _player.pause();
-      await _seekPlatform(Duration.zero);
+      await _stopAtStart();
       return;
     }
     _syncQueueNotifiers();
@@ -406,6 +421,9 @@ class AudioPlayerService {
     final idx = _queue.songs.indexWhere((s) => s.id == song.id);
     if (idx >= 0 && idx != _queue.index) _queue.removeAt(idx);
   }
+
+  /// Songs still to play (with their queue index), in play order.
+  List<(int, Song)> get upcoming => [for (final i in _queue.upcomingIndices) (i, _queue.songs[i])];
 
   void toggleShuffle() => setShuffle(!isShuffle.value);
 

@@ -46,7 +46,9 @@ class LibraryService {
   /// and the existing library is kept untouched if permission is missing or
   /// the scan fails.
   Future<ScanOutcome> rescan({bool requestPermission = true}) {
-    return _activeScan ??= _rescan(requestPermission).whenComplete(() => _activeScan = null);
+    return _activeScan ??= _rescan(requestPermission).whenComplete(() {
+      _activeScan = null;
+    });
   }
 
   Future<ScanOutcome> _rescan(bool requestPermission) async {
@@ -89,7 +91,11 @@ class LibraryService {
 
   void recordPlay(Song song) {
     final count = song.playCount + 1;
-    _updateEverywhere(song, (s) => s.playCount = count);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _updateEverywhere(song, (s) {
+      s.playCount = count;
+      s.lastPlayedAt = now;
+    });
   }
 
   /// Stores the real duration reported by the player, replacing metadata

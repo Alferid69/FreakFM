@@ -11,12 +11,17 @@ import 'lyrics_share_dialog.dart';
 class LyricsView extends StatefulWidget {
   final Song song;
   final bool isCompact;
+
+  /// Spotify-style full-screen lyrics: large bold lines on a coloured
+  /// background supplied by the parent, without the source/actions bar.
+  final bool immersive;
   final VoidCallback? onOpenFullPlayer;
 
   const LyricsView({
     super.key,
     required this.song,
     this.isCompact = false,
+    this.immersive = false,
     this.onOpenFullPlayer,
   });
 
@@ -41,7 +46,11 @@ class _LyricsViewState extends State<LyricsView> {
   @override
   void initState() {
     super.initState();
-    _loadLyricsForCurrentSong();
+    // Fetching updates shared notifiers that other widgets listen to, so it
+    // must not run while the tree is building.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadLyricsForCurrentSong();
+    });
   }
 
   @override
@@ -53,7 +62,9 @@ class _LyricsViewState extends State<LyricsView> {
       _lineKeys.clear();
       _lastActiveIndex = -1;
       _userIsScrolling = false;
-      _loadLyricsForCurrentSong();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadLyricsForCurrentSong();
+      });
     }
   }
 
@@ -165,7 +176,7 @@ class _LyricsViewState extends State<LyricsView> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Header Bar with Source & Actions
-                _buildLyricsHeader(context, lyrics, isLoading, hasLyrics),
+                if (!widget.immersive) _buildLyricsHeader(context, lyrics, isLoading, hasLyrics),
 
                 // Main Content
                 Expanded(
@@ -541,33 +552,10 @@ class _LyricsViewState extends State<LyricsView> {
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 250),
                           curve: Curves.easeOut,
-                          style: TextStyle(
-                            fontFamily: 'Inter',
-                            fontSize: isActive
-                                ? (widget.isCompact ? 15.5 : 20.0)
-                                : (widget.isCompact ? 13.0 : 16.0),
-                            fontWeight: isActive
-                                ? FontWeight.w800
-                                : (isPast ? FontWeight.w500 : FontWeight.w400),
-                            color: isActive
-                                ? AppTheme.accentAmber
-                                : (isPast
-                                    ? AppTheme.textPrimary.withValues(alpha: 0.75)
-                                    : AppTheme.textMuted.withValues(alpha: 0.55)),
-                            letterSpacing: isActive ? -0.2 : 0.0,
-                            height: 1.35,
-                            shadows: isActive
-                                ? [
-                                    BoxShadow(
-                                      color: AppTheme.accentAmber.withValues(alpha: 0.4),
-                                      blurRadius: 10,
-                                    ),
-                                  ]
-                                : null,
-                          ),
+                          style: _syncedLineStyle(isActive: isActive, isPast: isPast),
                           child: Text(
                             line.text.isEmpty ? '♪  ♪  ♪' : line.text,
-                            textAlign: widget.isCompact ? TextAlign.left : TextAlign.center,
+                            textAlign: (widget.isCompact || widget.immersive) ? TextAlign.left : TextAlign.center,
                           ),
                         ),
                       ),
@@ -639,6 +627,30 @@ class _LyricsViewState extends State<LyricsView> {
     );
   }
 
+  TextStyle _syncedLineStyle({required bool isActive, required bool isPast}) {
+    if (widget.immersive) {
+      // Spotify: sung lines stay white, upcoming lines are dark on the colour.
+      return TextStyle(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+        height: 1.3,
+        letterSpacing: -0.3,
+        color: isActive
+            ? Colors.white
+            : (isPast ? Colors.white.withValues(alpha: 0.7) : Colors.black.withValues(alpha: 0.55)),
+      );
+    }
+    return TextStyle(
+      fontSize: isActive ? (widget.isCompact ? 15.5 : 20.0) : (widget.isCompact ? 13.0 : 16.0),
+      fontWeight: isActive ? FontWeight.w800 : (isPast ? FontWeight.w500 : FontWeight.w400),
+      color: isActive
+          ? AppTheme.textPrimary
+          : (isPast ? AppTheme.textPrimary.withValues(alpha: 0.75) : AppTheme.textMuted.withValues(alpha: 0.7)),
+      letterSpacing: isActive ? -0.2 : 0.0,
+      height: 1.35,
+    );
+  }
+
   Widget _buildPlainLyricsView(LyricsData lyrics, String plainLyrics) {
     final lines = plainLyrics.split('\n');
 
@@ -662,13 +674,15 @@ class _LyricsViewState extends State<LyricsView> {
               padding: const EdgeInsets.symmetric(vertical: 3.5),
               child: Text(
                 line,
-                textAlign: widget.isCompact ? TextAlign.left : TextAlign.center,
-                style: TextStyle(
-                  fontSize: widget.isCompact ? 13.0 : 15.5,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.textPrimary.withValues(alpha: 0.85),
-                  height: 1.4,
-                ),
+                textAlign: (widget.isCompact || widget.immersive) ? TextAlign.left : TextAlign.center,
+                style: widget.immersive
+                    ? const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white, height: 1.35)
+                    : TextStyle(
+                        fontSize: widget.isCompact ? 13.0 : 15.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.textPrimary.withValues(alpha: 0.85),
+                        height: 1.4,
+                      ),
               ),
             );
           },

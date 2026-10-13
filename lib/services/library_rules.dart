@@ -139,6 +139,7 @@ class LibraryRules {
       if (old == null) continue;
       song.isFavorite = old.isFavorite;
       song.playCount = old.playCount;
+      song.lastPlayedAt = old.lastPlayedAt;
       if (old.dateAdded > 0 && old.dateAdded < song.dateAdded) {
         song.dateAdded = old.dateAdded;
       }

@@ -56,35 +56,56 @@ void main() {
     ]);
   });
 
-  testWidgets('Back closes an open album, then returns to Songs', (tester) async {
+  testWidgets('Back closes an open album, then leaves Library for Home, then exits', (tester) async {
     tester.view.physicalSize = const Size(412 * 2.6, 915 * 2.6);
     tester.view.devicePixelRatio = 2.6;
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(const FreakMusicPlayerApp());
     await settle(tester);
-    expect(find.text('One'), findsOneWidget);
 
-    await tester.ensureVisible(find.byKey(const ValueKey('tab_Albums')));
-    await tester.tap(find.byKey(const ValueKey('tab_Albums')));
+    await tester.tap(find.byKey(const ValueKey('nav_library')));
     await settle(tester);
-
+    await tester.tap(find.byKey(const ValueKey('library_filter_albums')));
+    await settle(tester);
     await tester.tap(find.text('First Album').hitTestable().first);
     await settle(tester);
-    expect(find.text('Play Album'), findsOneWidget);
+    expect(find.byKey(const ValueKey('collection_play')).hitTestable(), findsOneWidget);
+    expect(find.text('One').hitTestable(), findsOneWidget);
 
     final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
 
+    // Back #1: closes the album, still in Your Library.
     expect(await navigator.maybePop(), isTrue);
     await settle(tester);
-    expect(find.text('Play Album'), findsNothing);
-    expect(find.text('Second Album'), findsOneWidget, reason: 'still on the album grid');
+    expect(find.byKey(const ValueKey('collection_play')).hitTestable(), findsNothing);
+    expect(find.text('Second Album').hitTestable(), findsOneWidget, reason: 'still on the album list');
 
+    // Back #2: from the Library root to Home.
     expect(await navigator.maybePop(), isTrue);
     await settle(tester);
-    expect(find.byKey(const ValueKey('play_all_button')), findsOneWidget, reason: 'back on Songs');
+    expect(find.byKey(const ValueKey('home_filter_all')).hitTestable(), findsOneWidget, reason: 'back on Home');
 
-    // On Songs with nothing open, Back is no longer intercepted.
+    // On Home with nothing open, Back is no longer intercepted.
     expect(await navigator.maybePop(), isFalse);
+  });
+
+  testWidgets('re-tapping a tab returns to its first page', (tester) async {
+    tester.view.physicalSize = const Size(412 * 2.6, 915 * 2.6);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(const FreakMusicPlayerApp());
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('nav_library')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('collection_allSongs_all')));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('collection_play')).hitTestable(), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('nav_library')));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('collection_play')).hitTestable(), findsNothing);
+    expect(find.byKey(const ValueKey('library_filter_albums')).hitTestable(), findsOneWidget);
   });
 }

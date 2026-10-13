@@ -15,6 +15,7 @@ class Song {
   int dateAdded;
   bool isFavorite;
   int playCount;
+  int? lastPlayedAt; // ms since epoch
   final int bitrate; // kbps, 0 when unknown
   final int sampleRate; // Hz, 0 when unknown
   String? artworkPath;
@@ -35,6 +36,7 @@ class Song {
     required this.dateAdded,
     this.isFavorite = false,
     this.playCount = 0,
+    this.lastPlayedAt,
     this.bitrate = 0,
     this.sampleRate = 0,
     this.artworkPath,
@@ -92,6 +94,7 @@ class Song {
         'dateAdded': dateAdded,
         'isFavorite': isFavorite,
         'playCount': playCount,
+        'lastPlayedAt': lastPlayedAt,
         'bitrate': bitrate,
         'sampleRate': sampleRate,
         'artworkPath': artworkPath,
@@ -113,6 +116,7 @@ class Song {
         dateAdded: (json['dateAdded'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
         isFavorite: json['isFavorite'] as bool? ?? false,
         playCount: (json['playCount'] as num?)?.toInt() ?? 0,
+        lastPlayedAt: (json['lastPlayedAt'] as num?)?.toInt(),
         bitrate: (json['bitrate'] as num?)?.toInt() ?? 0,
         sampleRate: (json['sampleRate'] as num?)?.toInt() ?? 0,
         artworkPath: json['artworkPath'] as String?,

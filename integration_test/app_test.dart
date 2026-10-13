@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:freak_shit_show/main.dart';
 import 'package:freak_shit_show/models/song.dart';
 import 'package:freak_shit_show/services/audio_player_service.dart';
+import 'package:freak_shit_show/services/freak_audio_handler.dart';
 import 'package:freak_shit_show/services/library_service.dart';
 import 'package:freak_shit_show/services/music_scanner_service.dart';
 import 'package:freak_shit_show/services/storage_cache_service.dart';
@@ -143,23 +144,30 @@ void main() {
       await initializeApp();
     });
 
-    testWidgets('shows the library, searches, and persists favourites', (tester) async {
+    /// Waits until [finder] is on screen and tappable.
+    Future<void> waitVisible(WidgetTester tester, Finder finder, String reason) =>
+        waitFor(tester, () => finder.hitTestable().evaluate().isNotEmpty, reason: reason);
+
+    Future<void> openAllSongs(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('nav_library')));
+      await waitVisible(tester, find.byKey(const ValueKey('collection_allSongs_all')), 'library tab');
+      await tester.tap(find.byKey(const ValueKey('collection_allSongs_all')));
+      await waitVisible(tester, find.byKey(const ValueKey('collection_play')), 'all songs page');
+    }
+
+    testWidgets('searches the library and persists likes', (tester) async {
       await tester.pumpWidget(const FreakMusicPlayerApp());
-      await waitFor(tester, () => find.text('Alpha Tone').evaluate().isNotEmpty, reason: 'library to load');
+      await waitVisible(tester, find.byKey(const ValueKey('nav_search')), 'app to start');
 
-      expect(find.text('Bravo Tone'), findsWidgets);
-      expect(find.text('Charlie Tone'), findsWidgets);
-
-      // Search narrows the list.
-      await tester.tap(find.byKey(const ValueKey('search_button')));
-      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('nav_search')));
+      await waitVisible(tester, find.byKey(const ValueKey('search_field')), 'search tab');
       await tester.enterText(find.byKey(const ValueKey('search_field')), 'bravo');
-      await waitFor(tester, () => find.text('Alpha Tone').evaluate().isEmpty, reason: 'search filter');
-      expect(find.text('Bravo Tone'), findsWidgets);
+      await waitVisible(tester, find.text('Bravo Tone'), 'search results');
+      expect(find.text('Alpha Tone').hitTestable(), findsNothing);
 
-      // Favourite it and make sure it is written to disk.
+      // Like it from the results and make sure it is written to disk.
       final bravo = seeded.firstWhere((s) => s.title == 'Bravo Tone');
-      await tester.tap(find.byKey(ValueKey('favorite_${bravo.id}')));
+      await tester.tap(find.byKey(ValueKey('favorite_${bravo.id}')).hitTestable());
       await tester.pump();
       expect(LibraryService.instance.songs.value.firstWhere((s) => s.id == bravo.id).isFavorite, isTrue);
 
@@ -167,9 +175,11 @@ void main() {
       final saved = await StorageCacheService.loadCachedSongs();
       expect(saved!.firstWhere((s) => s.id == bravo.id).isFavorite, isTrue);
 
-      // Clear the search again.
-      await tester.tap(find.byKey(const ValueKey('search_button')));
-      await waitFor(tester, () => find.text('Alpha Tone').evaluate().isNotEmpty, reason: 'search reset');
+      // It now shows up in Liked Songs.
+      await tester.tap(find.byKey(const ValueKey('nav_library')));
+      await waitVisible(tester, find.byKey(const ValueKey('collection_liked_liked')), 'library tab');
+      await tester.tap(find.byKey(const ValueKey('collection_liked_liked')));
+      await waitVisible(tester, find.text('Bravo Tone'), 'liked songs page');
     });
 
     testWidgets('plays a track, advances, and counts the play', (tester) async {
@@ -178,18 +188,20 @@ void main() {
       player.setShuffle(false);
 
       await tester.pumpWidget(const FreakMusicPlayerApp());
-      await waitFor(tester, () => find.text('Alpha Tone').evaluate().isNotEmpty, reason: 'library to load');
+      await waitVisible(tester, find.byKey(const ValueKey('nav_library')), 'app to start');
+      await openAllSongs(tester);
 
       final alpha = seeded.firstWhere((s) => s.title == 'Alpha Tone');
       final playsBefore = LibraryService.instance.songs.value.firstWhere((s) => s.id == alpha.id).playCount;
 
-      await tester.tap(find.byKey(ValueKey('track_${alpha.id}')));
+      await tester.tap(find.byKey(ValueKey('track_${alpha.id}')).hitTestable());
       await waitFor(tester, () => player.currentSong.value?.id == alpha.id, reason: 'song to load');
       await waitFor(tester, () => player.isPlaying.value, reason: 'playback to start');
       await waitFor(tester, () => player.position.value > const Duration(milliseconds: 500),
           reason: 'position to advance');
 
       expect(find.byKey(const ValueKey('mini_player')), findsOneWidget);
+      expect(player.playingFrom.value, 'All Songs');
       expect(
         LibraryService.instance.songs.value.firstWhere((s) => s.id == alpha.id).playCount,
         playsBefore + 1,
@@ -197,52 +209,70 @@ void main() {
       // The real decoded duration replaces the metadata value.
       expect(player.duration.value.inMilliseconds, closeTo(6000, 300));
 
-      // Pause / resume.
-      await player.pause();
+      // Pause / resume from the mini player.
+      await tester.tap(find.byKey(const ValueKey('mini_play')));
       await waitFor(tester, () => !player.isPlaying.value, reason: 'pause');
-      await player.play();
+      await tester.tap(find.byKey(const ValueKey('mini_play')));
       await waitFor(tester, () => player.isPlaying.value, reason: 'resume');
 
-      // Skip forward to the next track in the queue.
-      await player.next();
+      // Open the full player and skip forward.
+      await tester.tap(find.byKey(const ValueKey('mini_player')));
+      await waitVisible(tester, find.byKey(const ValueKey('np_next')), 'now playing');
+      await tester.tap(find.byKey(const ValueKey('np_next')));
       await waitFor(tester, () => player.currentSong.value?.title == 'Bravo Tone', reason: 'next track');
 
       // Seeking near the end lets the track finish and auto-advance.
       await waitFor(tester, () => player.duration.value > Duration.zero, reason: 'duration');
+      await waitFor(tester, () => player.isPlaying.value, reason: 'bravo playing');
+
+      // Regression: the system media session must stay "playing" across the
+      // song change. A "paused" blip lets Android drop the foreground service,
+      // and in the background the app then stops after a few songs.
+      final reported = <bool>[];
+      final sub = FreakAudioHandler.instance?.playbackState.listen((s) => reported.add(s.playing));
+
       await player.seek(player.duration.value - const Duration(milliseconds: 600));
       await waitFor(tester, () => player.currentSong.value?.title == 'Charlie Tone',
           reason: 'auto-advance on completion');
+      await waitFor(tester, () => player.isPlaying.value, reason: 'charlie playing');
+      await sub?.cancel();
+      if (FreakAudioHandler.instance != null) {
+        expect(reported, isNotEmpty);
+        expect(reported, everyElement(isTrue), reason: 'media session reported a pause between songs');
+      }
 
       await player.pause();
+      await tester.tap(find.byKey(const ValueKey('np_close')));
+      await tester.pump(const Duration(milliseconds: 400));
     });
 
-    testWidgets('Back closes an open album before leaving the tab', (tester) async {
+    testWidgets('Back closes an album, then leaves Library for Home', (tester) async {
       await tester.pumpWidget(const FreakMusicPlayerApp());
-      await waitFor(tester, () => find.text('Alpha Tone').evaluate().isNotEmpty, reason: 'library to load');
+      await waitVisible(tester, find.byKey(const ValueKey('nav_library')), 'app to start');
 
-      // On phone widths the Albums pill starts off-screen; scroll it in first.
-      await tester.ensureVisible(find.byKey(const ValueKey('tab_Albums')));
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.byKey(const ValueKey('tab_Albums')));
-      // Wait until the page transition has finished and the card can be hit.
-      await waitFor(tester, () => find.text('Integration').hitTestable().evaluate().isNotEmpty,
-          reason: 'album grid');
+      await tester.tap(find.byKey(const ValueKey('nav_library')));
+      await waitVisible(tester, find.byKey(const ValueKey('library_filter_albums')), 'library tab');
+      await tester.tap(find.byKey(const ValueKey('library_filter_albums')));
+      await waitVisible(tester, find.text('Integration'), 'album list');
       await tester.tap(find.text('Integration').hitTestable().first);
-      await waitFor(tester, () => find.text('Play Album').evaluate().isNotEmpty, reason: 'album detail');
+      await waitVisible(tester, find.byKey(const ValueKey('collection_play')), 'album page');
 
       // The system Back button ends up in Navigator.maybePop; calling it
       // directly can never close the app if Back isn't intercepted.
       Future<bool> pressBack() => tester.state<NavigatorState>(find.byType(Navigator).first).maybePop();
 
-      // First Back: back to the album grid, still on the Albums tab.
+      // First Back: closes the album, still in Your Library.
       expect(await pressBack(), isTrue);
-      await waitFor(tester, () => find.text('Play Album').evaluate().isEmpty, reason: 'album closed');
-      expect(find.text('Integration'), findsWidgets);
+      await waitFor(tester, () => find.byKey(const ValueKey('collection_play')).hitTestable().evaluate().isEmpty,
+          reason: 'album closed');
+      expect(find.text('Integration').hitTestable(), findsWidgets);
 
-      // Second Back: return to the Songs tab instead of quitting.
+      // Second Back: to Home instead of quitting.
       expect(await pressBack(), isTrue);
-      await waitFor(tester, () => find.byKey(const ValueKey('play_all_button')).evaluate().isNotEmpty,
-          reason: 'songs tab');
+      await waitVisible(tester, find.byKey(const ValueKey('home_filter_all')), 'home tab');
+
+      // Third Back on Home is no longer intercepted (the app may close).
+      expect(await pressBack(), isFalse);
     });
 
     testWidgets('song menu queues "Play next" right after the current song', (tester) async {
@@ -252,12 +282,11 @@ void main() {
       await player.playSong(alpha, contextQueue: [alpha]);
 
       await tester.pumpWidget(const FreakMusicPlayerApp());
-      await waitFor(tester, () => find.byKey(ValueKey('more_${charlie.id}')).evaluate().isNotEmpty,
-          reason: 'track list');
+      await waitVisible(tester, find.byKey(const ValueKey('nav_library')), 'app to start');
+      await openAllSongs(tester);
 
-      await tester.tap(find.byKey(ValueKey('more_${charlie.id}')));
-      await waitFor(tester, () => find.byKey(const ValueKey('option_play_next')).evaluate().isNotEmpty,
-          reason: 'song menu');
+      await tester.tap(find.byKey(ValueKey('more_${charlie.id}')).hitTestable());
+      await waitVisible(tester, find.byKey(const ValueKey('option_play_next')), 'song menu');
       await tester.tap(find.byKey(const ValueKey('option_play_next')));
       await tester.pump();
 

@@ -39,7 +39,11 @@ class ArtworkService {
       _resolved[song.id] = path;
       if (path != null) song.artworkPath = path;
       return path;
-    }).whenComplete(() => _pending.remove(song.id));
+    }).whenComplete(() {
+      // Block body: returning the removed future here would make the
+      // future wait on itself and never complete.
+      _pending.remove(song.id);
+    });
   }
 
   Future<T> _withSlot<T>(Future<T> Function() task) async {

@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'services/freak_audio_handler.dart';
 import 'services/lyrics_service.dart';
 import 'theme/app_theme.dart';
-import 'views/home_view.dart';
+import 'views/root_shell.dart';
 
 bool _initialized = false;
 
@@ -68,7 +68,7 @@ class FreakMusicPlayerApp extends StatelessWidget {
       title: 'freak player',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const HomeView(),
+      home: RootShell(key: RootShell.globalKey),
     );
   }
 }

@@ -24,6 +24,11 @@ class PlaybackQueue {
   bool get isEmpty => _songs.isEmpty;
   Song? get current => (_index >= 0 && _index < _songs.length) ? _songs[_index] : null;
 
+  /// Indices of the songs still to come, in the order they will play.
+  List<int> get upcomingIndices => _shuffle
+      ? _order.sublist(_orderPos + 1)
+      : [for (var i = _index + 1; i < _songs.length; i++) i];
+
   /// Replaces the queue and positions it at [startIndex].
   void setQueue(List<Song> songs, int startIndex) {
     _songs = List<Song>.unmodifiable(songs);
