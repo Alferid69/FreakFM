@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 
 class LyricsShareService {
-  static const MethodChannel _channel = MethodChannel('com.example.freak_shit_show/media_store');
+  static const MethodChannel _channel = MethodChannel('com.alferid.freakfm/media_store');
 
   /// Renders a widget identified by [boundaryKey] to crisp high-DPI PNG bytes
   static Future<Uint8List?> captureCardToPng(GlobalKey boundaryKey, {double pixelRatio = 3.0}) async {

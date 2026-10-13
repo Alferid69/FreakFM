@@ -18,7 +18,7 @@ class ArtworkService {
   static final ArtworkService instance = ArtworkService._();
   ArtworkService._();
 
-  static const MethodChannel _mediaStoreChannel = MethodChannel('com.example.freak_shit_show/media_store');
+  static const MethodChannel _mediaStoreChannel = MethodChannel('com.alferid.freakfm/media_store');
   static const int _maxConcurrent = 3;
 
   final Map<String, String?> _resolved = {};

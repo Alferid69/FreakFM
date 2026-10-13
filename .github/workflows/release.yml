@@ -86,6 +86,9 @@ jobs:
       - name: Build APKs (one per ABI)
         run: flutter build apk --release --split-per-abi --build-number ${{ github.run_number }}
 
+      - name: Build Play Store bundle (AAB)
+        run: flutter build appbundle --release --build-number ${{ github.run_number }}
+
       - name: Rename APKs
         id: apks
         shell: bash
@@ -95,7 +98,8 @@ jobs:
             cp "build/app/outputs/flutter-apk/app-${abi}-release.apk" \
                "dist/freakfm-${{ steps.meta.outputs.tag }}-${abi}.apk"
           done
-          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          cp build/app/outputs/bundle/release/app-release.aab "dist/freakfm-${{ steps.meta.outputs.tag }}.aab"
+          (cd dist && sha256sum *.apk *.aab > SHA256SUMS.txt)
           ls -la dist
 
       - uses: actions/upload-artifact@v4
@@ -113,6 +117,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/*.apk
+            dist/*.aab
             dist/SHA256SUMS.txt
           body: |
             ### Which APK do I install?

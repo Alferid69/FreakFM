@@ -1,4 +1,4 @@
-package com.example.freak_shit_show
+package com.alferid.freakfm
 
 import android.content.ContentUris
 import android.content.ContentValues
@@ -25,7 +25,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : AudioServiceActivity() {
-    private val channelName = "com.example.freak_shit_show/media_store"
+    private val channelName = "com.alferid.freakfm/media_store"
 
     // MediaStore queries and artwork extraction can take hundreds of ms per
     // call; run them off the UI thread so the app never janks or ANRs.

@@ -8,7 +8,7 @@
 PRODUCT_NAME = freak_shit_show
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.freakShitShow
+PRODUCT_BUNDLE_IDENTIFIER = com.alferid.freakfm
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 com.alferid. All rights reserved.

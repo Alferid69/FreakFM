@@ -38,7 +38,7 @@ Future<void> initializeApp() async {
       await AudioService.init(
         builder: () => FreakAudioHandler(),
         config: const AudioServiceConfig(
-          androidNotificationChannelId: 'com.example.freak_shit_show.channel.audio',
+          androidNotificationChannelId: 'com.alferid.freakfm.channel.audio',
           androidNotificationChannelName: 'FreakFM',
           androidNotificationChannelDescription: 'Playback controls for FreakFM',
           androidNotificationIcon: 'mipmap/ic_launcher',

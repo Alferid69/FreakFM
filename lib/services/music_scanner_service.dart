@@ -18,7 +18,7 @@ class ScanResult {
 }
 
 class MusicScannerService {
-  static const MethodChannel _mediaStoreChannel = MethodChannel('com.example.freak_shit_show/media_store');
+  static const MethodChannel _mediaStoreChannel = MethodChannel('com.alferid.freakfm/media_store');
 
   static const Set<String> audioExtensions = {
     '.mp3',
