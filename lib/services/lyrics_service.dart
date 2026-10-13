@@ -279,7 +279,7 @@ class LyricsService {
     try {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
       final req = await client.getUrl(uri);
-      req.headers.set('User-Agent', 'FreakPlayer/1.1 (offline music player)');
+      req.headers.set('User-Agent', 'FreakFM/1.3 (offline music player)');
       final resp = await req.close().timeout(const Duration(seconds: 8));
       if (resp.statusCode == 200) {
         return await resp.transform(utf8.decoder).join();

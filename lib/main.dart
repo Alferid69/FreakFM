@@ -39,8 +39,8 @@ Future<void> initializeApp() async {
         builder: () => FreakAudioHandler(),
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'com.example.freak_shit_show.channel.audio',
-          androidNotificationChannelName: 'freak player',
-          androidNotificationChannelDescription: 'Playback controls for freak player',
+          androidNotificationChannelName: 'FreakFM',
+          androidNotificationChannelDescription: 'Playback controls for FreakFM',
           androidNotificationIcon: 'mipmap/ic_launcher',
           // Lets the notification be swiped away while paused instead of
           // pinning a foreground service forever.
@@ -65,7 +65,7 @@ class FreakMusicPlayerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'freak player',
+      title: 'FreakFM',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: RootShell(key: RootShell.globalKey),

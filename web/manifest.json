@@ -1,6 +1,6 @@
 {
-    "name": "freak_shit_show",
-    "short_name": "freak_shit_show",
+    "name": "FreakFM",
+    "short_name": "FreakFM",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

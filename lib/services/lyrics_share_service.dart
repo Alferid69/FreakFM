@@ -58,7 +58,7 @@ class LyricsShareService {
         final picDir = await getApplicationDocumentsDirectory();
         final savedPath = p.join(
           picDir.path,
-          'freak_lyrics_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.png',
+          'freakfm_lyrics_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.png',
         );
         await file.copy(savedPath);
 
@@ -75,7 +75,7 @@ class LyricsShareService {
   }
 
   /// Saves the captured PNG card. On Android it goes into the gallery
-  /// (Pictures/freak player) via MediaStore; elsewhere into Documents.
+  /// (Pictures/FreakFM) via MediaStore; elsewhere into Documents.
   /// Returns a human-readable location, or null on failure.
   static Future<String?> saveLyricCardToDisk({
     required GlobalKey boundaryKey,
@@ -85,7 +85,7 @@ class LyricsShareService {
     if (bytes == null || bytes.isEmpty) return null;
 
     final safeTitle = song.title.replaceAll(RegExp(r'[^\w\s\.-]'), '_').trim();
-    final fileName = 'freak_lyrics_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.png';
+    final fileName = 'freakfm_lyrics_${safeTitle}_${DateTime.now().millisecondsSinceEpoch}.png';
 
     try {
       if (!kIsWeb && Platform.isAndroid) {
@@ -126,7 +126,7 @@ class LyricsShareService {
     }
     buffer.writeln();
     buffer.writeln('— "${song.title}" by ${song.artist}');
-    buffer.write('freak player 🎵');
+    buffer.write('FreakFM 🎵');
     return buffer.toString();
   }
 }

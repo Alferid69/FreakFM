@@ -1,4 +1,4 @@
-# freak player 🎵
+# FreakFM 📻
 
 A Spotify-inspired **offline** music player for **Android** and **Windows**, built with Flutter: your local library, synced lyrics, a real equalizer, and proper lock-screen / Bluetooth controls — no accounts, ads or tracking.
 

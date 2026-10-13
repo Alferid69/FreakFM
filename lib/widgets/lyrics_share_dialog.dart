@@ -530,7 +530,7 @@ class _LyricsShareDialogState extends State<LyricsShareDialog> {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'freak player',
+                    'FreakFM',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,

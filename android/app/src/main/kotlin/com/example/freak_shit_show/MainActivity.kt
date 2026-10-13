@@ -171,7 +171,7 @@ class MainActivity : AudioServiceActivity() {
         return cacheFile.absolutePath
     }
 
-    /** Inserts an image into Pictures/freak player so it shows up in the gallery. */
+    /** Inserts an image into Pictures/FreakFM so it shows up in the gallery. */
     private fun saveImageToGallery(source: File, fileName: String): String {
         if (!source.exists()) throw IllegalArgumentException("File not found: ${source.path}")
 
@@ -179,7 +179,7 @@ class MainActivity : AudioServiceActivity() {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/freak player")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/FreakFM")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
             val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -191,7 +191,7 @@ class MainActivity : AudioServiceActivity() {
             values.clear()
             values.put(MediaStore.Images.Media.IS_PENDING, 0)
             contentResolver.update(uri, values, null, null)
-            return "Pictures/freak player/$fileName"
+            return "Pictures/FreakFM/$fileName"
         }
 
         // Android 9 and below: app-specific pictures folder (no extra permission).

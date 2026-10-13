@@ -1,9 +1,9 @@
 # PRODUCT.md
 
-## Product Truth: Freak Player (Spotify Edition)
+## Product Truth: FreakFM (Spotify Edition)
 
 ### 1. Vision & Purpose
-Freak Player is a high-performance, offline-first music player application for Windows Desktop and Android Mobile. It combines the sleek, beloved visual language and user experience of Spotify with instant local storage indexing (< 1 second for 1,000+ songs), free synchronized lyrics streaming, gapless background audio playback, and system media integration.
+FreakFM is a high-performance, offline-first music player application for Windows Desktop and Android Mobile. It combines the sleek, beloved visual language and user experience of Spotify with instant local storage indexing (< 1 second for 1,000+ songs), free synchronized lyrics streaming, gapless background audio playback, and system media integration.
 
 ### 2. Target Audience
 Music enthusiasts who desire the premium, tactile dark-mode aesthetic of Spotify for their personal offline audio library without advertisements, subscriptions, or telemetry.

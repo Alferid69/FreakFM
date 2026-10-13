@@ -149,7 +149,7 @@ class _SettingsPageState extends State<SettingsPage> {
             _section('About'),
             const ListTile(
               leading: Icon(Icons.info_outline_rounded),
-              title: Text('freak player'),
+              title: Text('FreakFM'),
               subtitle: Text('Offline music player • lyrics from LRCLIB & Lyrics.ovh',
                   style: TextStyle(color: AppTheme.spotifyLightGrey)),
             ),
