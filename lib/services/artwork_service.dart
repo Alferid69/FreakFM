@@ -5,7 +5,6 @@ import 'dart:isolate';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
@@ -37,7 +36,7 @@ class ArtworkService {
   Future<String?> getArtworkPath(Song song) {
     if (_resolved.containsKey(song.id)) return Future.value(_resolved[song.id]);
     return _pending[song.id] ??= _withSlot(() => _resolve(song)).then((path) {
-      if (path != null || !song.isOnline) _resolved[song.id] = path;
+      _resolved[song.id] = path;
       if (path != null) song.artworkPath = path;
       return path;
     }).whenComplete(() {
@@ -79,7 +78,6 @@ class ArtworkService {
     final safeId = song.id.replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '_');
     final cacheFile = File(p.join((await _getArtworkDir()).path, 'art_$safeId.img'));
     if (await cacheFile.exists() && await cacheFile.length() > 0) return cacheFile.path;
-    if (song.isOnline) return _download(song.artworkUrl, cacheFile);
     // Remember misses across launches so files without art aren't re-probed.
     final missMarker = File('${cacheFile.path}.none');
     if (await missMarker.exists()) return null;
@@ -91,21 +89,6 @@ class ArtworkService {
       } catch (_) {}
     }
     return found;
-  }
-
-  /// Downloads a remote cover. Failures aren't remembered (the network may
-  /// simply be down), so the next view tries again.
-  Future<String?> _download(String? url, File target) async {
-    if (url == null || url.isEmpty) return null;
-    try {
-      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200 || response.bodyBytes.isEmpty) return null;
-      await target.writeAsBytes(response.bodyBytes, flush: true);
-      return target.path;
-    } catch (e) {
-      debugPrint('Artwork download failed: $e');
-      return null;
-    }
   }
 
   Future<String?> _extract(Song song, String safeId, File cacheFile) async {

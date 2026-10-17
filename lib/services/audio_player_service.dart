@@ -7,7 +7,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import 'freak_audio_handler.dart';
-import 'media_store_channel.dart';
 import 'library_service.dart';
 import 'lyrics_service.dart';
 import 'playback_queue.dart';
@@ -58,7 +57,6 @@ class AudioPlayerService {
   Future<void> _windowOp = Future<void>.value();
   int _tagSerial = 0;
   int _currentTag = -1;
-  bool _networkLockHeld = false;
 
   final ValueNotifier<Song?> currentSong = ValueNotifier<Song?>(null);
   final ValueNotifier<bool> isPlaying = ValueNotifier<bool>(false);
@@ -232,10 +230,9 @@ class AudioPlayerService {
 
       if (loaded != null && loaded > Duration.zero) {
         duration.value = loaded;
-        if (!song.isOnline) LibraryService.instance.updateDuration(song, loaded);
+        LibraryService.instance.updateDuration(song, loaded);
       }
       unawaited(_player.play());
-      _setNetworkLock(song.isOnline);
       _consecutiveFailures = 0;
       _onSongStarted(song);
       if (!_equalizerRestored) unawaited(_restoreEqualizer());
@@ -245,9 +242,7 @@ class AudioPlayerService {
       if (token != _loadToken) return;
       _loadInFlight = false;
       debugPrint('Playback error for ${song.filePath}: $e');
-      _errors.add(song.isOnline
-          ? 'Can\'t stream "${song.title}" — check your connection.'
-          : 'Can\'t play "${song.title}" — the file is missing or unsupported.');
+      _errors.add('Can\'t play "${song.title}" — the file is missing or unsupported.');
       // Skip straight on without publishing a stop in between (see the
       // player-state listener); only report "not playing" when nothing in
       // the queue is playable.
@@ -272,14 +267,13 @@ class AudioPlayerService {
 
   /// Bookkeeping that belongs to a song actually starting.
   void _onSongStarted(Song song) {
-    if (!song.isOnline) LibraryService.instance.recordPlay(song);
+    LibraryService.instance.recordPlay(song);
     unawaited(LyricsService.instance.fetchLyrics(song));
   }
 
   UriAudioSource _childFor(Song song) {
     final tag = _WindowTag(++_tagSerial, song);
     final uri = song.contentUri;
-    if (song.isOnline) return AudioSource.uri(Uri.parse(song.filePath), tag: tag);
     if (_isAndroid && uri != null && uri.startsWith('content://')) {
       return AudioSource.uri(Uri.parse(uri), tag: tag);
     }
@@ -308,7 +302,6 @@ class AudioPlayerService {
     final song = _queue.songs[idx];
     _announce(song);
     _onSongStarted(song);
-    _setNetworkLock(song.isOnline);
     _broadcastPlaybackState();
     unawaited(_trimAndTopUp());
   }
@@ -318,9 +311,7 @@ class AudioPlayerService {
     final song = currentSong.value;
     debugPrint('Playback error mid-stream: $error');
     if (song != null) {
-      _errors.add(song.isOnline
-          ? 'Lost the connection to "${song.title}".'
-          : 'Can\'t play "${song.title}" — the file is missing or unsupported.');
+      _errors.add('Can\'t play "${song.title}" — the file is missing or unsupported.');
     }
     _consecutiveFailures++;
     if (_consecutiveFailures < min(_queue.songs.length, 5)) {
@@ -376,13 +367,6 @@ class AudioPlayerService {
     if (adds.isNotEmpty) await _player.addAudioSources(adds);
   }
 
-  /// Streaming with the screen off needs Wi-Fi to stay awake.
-  void _setNetworkLock(bool held) {
-    if (!_isAndroid || _networkLockHeld == held) return;
-    _networkLockHeld = held;
-    unawaited(MediaStoreChannel.setNetworkLock(held));
-  }
-
   void _handleTrackCompleted() {
     if (sleepAtEndOfTrack.value) {
       sleepAtEndOfTrack.value = false;
@@ -405,7 +389,6 @@ class AudioPlayerService {
     await _seekPlatform(Duration.zero);
     isPlaying.value = false;
     isBuffering.value = false;
-    _setNetworkLock(false);
     _broadcastPlaybackState();
   }
 
@@ -425,12 +408,10 @@ class AudioPlayerService {
       await _seekPlatform(Duration.zero);
     }
     unawaited(_player.play());
-    _setNetworkLock(currentSong.value?.isOnline ?? false);
   }
 
   Future<void> pause() async {
     await _player.pause();
-    _setNetworkLock(false);
   }
 
   Future<void> togglePlayPause() async {

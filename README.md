@@ -23,10 +23,6 @@ A Spotify-inspired **offline** music player for **Android** and **Windows**, bui
 - **Accurate tags.** Title, artist, album, genre, year, duration, bitrate and cover art are read from the file (MP3, FLAC, M4A, OGG/Opus, WAV…), with sensible fallbacks from the file name.
 - Browse **albums, artists, folders and genres**, plus built-in playlists: **Liked Songs, All Songs, Most Played, Recently Added, Recently Played**.
 
-### Online music
-- **Stream free music** from [Audius](https://audius.co): open **Search → Online** to browse what's trending or search songs and artists, then play them with the same player, queue, lyrics and equalizer as your own files. No account or API key needed.
-- Providers sit behind a small interface (`lib/services/online_music_service.dart`), so another source can be added without touching the UI.
-
 ### Playback
 - **Keeps playing in the background.** Songs are handed to the native player as a short gapless playlist, so the next track starts on its own even if Android freezes the app's Dart code with the screen off. A one-tap card (and a Settings entry) sends you to the battery setting that stops phones from killing music apps.
 - `just_audio` engine with **shuffle that remembers** what you heard (Previous goes back to it) and repeat off / all / one.
@@ -79,7 +75,6 @@ Permissions on Android: *Music and audio* (to read your songs), *Internet* (lyri
 - **Framework**: Flutter 3.44 / Dart 3.12
 - **Audio**: `just_audio` (+ `just_audio_windows`), `audio_session`, `audio_service`
 - **Tags & artwork**: `audio_metadata_reader`; Android `MediaMetadataRetriever` / MediaStore via Kotlin (off the UI thread)
-- **Online**: `http` + the public Audius API
 - **Storage**: `shared_preferences`, `path_provider`, atomic JSON caches
 
 ---

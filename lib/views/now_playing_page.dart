@@ -204,7 +204,7 @@ class _NowPlayingBody extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               GestureDetector(
-                onTap: song.isOnline ? null : () => _openFromPlayer(context, Collections.artistOf(song)),
+                onTap: () => _openFromPlayer(context, Collections.artistOf(song)),
                 child: Text(
                   song.artist,
                   maxLines: 1,
@@ -215,7 +215,6 @@ class _NowPlayingBody extends StatelessWidget {
             ],
           ),
         ),
-        if (!song.isOnline)
         ValueListenableBuilder<int>(
           valueListenable: LibraryService.instance.revision,
           builder: (context, _, _) => IconButton(
@@ -297,7 +296,6 @@ class _NowPlayingBody extends StatelessWidget {
               subtitle: Text(song.artist, maxLines: 1, style: const TextStyle(color: AppTheme.spotifyLightGrey)),
             ),
             const Divider(height: 1, color: Color(0xFF3A3A3A)),
-            if (!song.isOnline) ...[
             ListTile(
               leading: const Icon(Icons.album_rounded),
               title: const Text('Go to album'),
@@ -314,7 +312,6 @@ class _NowPlayingBody extends StatelessWidget {
                 _openFromPlayer(context, Collections.artistOf(song));
               },
             ),
-            ],
             ListTile(
               leading: const Icon(Icons.speed_rounded),
               title: Text('Playback speed (${player.playbackSpeed.value}x)'),
@@ -331,7 +328,6 @@ class _NowPlayingBody extends StatelessWidget {
                 showSleepTimerSheet(context);
               },
             ),
-            if (!song.isOnline)
             ListTile(
               leading: const Icon(Icons.more_horiz_rounded),
               title: const Text('More song options'),

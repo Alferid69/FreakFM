@@ -22,9 +22,6 @@ class Song {
   final int? albumId;
   final String? contentUri;
 
-  /// Remote cover image, for songs streamed from an online provider.
-  final String? artworkUrl;
-
   Song({
     required this.id,
     required this.title,
@@ -45,16 +42,12 @@ class Song {
     this.artworkPath,
     this.albumId,
     this.contentUri,
-    this.artworkUrl,
   });
-
-  /// True for songs streamed from the internet rather than read from disk.
-  bool get isOnline => filePath.startsWith('http://') || filePath.startsWith('https://');
 
   /// Directory that contains the file, used to group and hide folders.
   /// Falls back to the folder name for content:// entries with no real path.
   String get folderPath {
-    if (filePath.isEmpty || filePath.startsWith('content://') || isOnline) return folder;
+    if (filePath.isEmpty || filePath.startsWith('content://')) return folder;
     return p.dirname(filePath);
   }
 
@@ -107,7 +100,6 @@ class Song {
         'artworkPath': artworkPath,
         'albumId': albumId,
         'contentUri': contentUri,
-        'artworkUrl': artworkUrl,
       };
 
   factory Song.fromJson(Map<String, dynamic> json) => Song(
@@ -130,7 +122,6 @@ class Song {
         artworkPath: json['artworkPath'] as String?,
         albumId: (json['albumId'] as num?)?.toInt(),
         contentUri: json['contentUri'] as String?,
-        artworkUrl: json['artworkUrl'] as String?,
       );
 }
 

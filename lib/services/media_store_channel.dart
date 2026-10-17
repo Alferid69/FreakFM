@@ -10,16 +10,6 @@ class MediaStoreChannel {
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;
 
-  /// Holds (or releases) a Wi-Fi lock so streaming survives screen-off.
-  static Future<void> setNetworkLock(bool enabled) async {
-    if (!_supported) return;
-    try {
-      await _channel.invokeMethod<bool>('setNetworkLock', {'enabled': enabled});
-    } catch (e) {
-      debugPrint('setNetworkLock failed: $e');
-    }
-  }
-
   /// True when Android won't put FreakFM to sleep to save battery.
   static Future<bool> isIgnoringBatteryOptimizations() async {
     if (!_supported) return true;

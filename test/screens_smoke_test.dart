@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:freak_shit_show/main.dart';
 import 'package:freak_shit_show/models/song.dart';
-import 'package:freak_shit_show/services/online_music_service.dart';
 import 'package:freak_shit_show/services/audio_player_service.dart';
 import 'package:freak_shit_show/services/library_service.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -36,30 +35,6 @@ Future<void> settle(WidgetTester tester) async {
 
 /// Opens every screen at phone size. The test font is wider than real
 /// text, so this doubles as an overflow check for long titles / big fonts.
-class _FakeProvider implements OnlineMusicProvider {
-  @override
-  String get name => 'Fake';
-
-  Song _s() => Song(
-        id: 'fake:1',
-        title: 'Cloud Song',
-        artist: 'Streamer',
-        album: 'Fake',
-        durationMs: 120000,
-        filePath: 'https://example.com/1.mp3',
-        fileSize: 0,
-        folder: 'Fake',
-        genre: 'Music',
-        dateAdded: 0,
-      );
-
-  @override
-  Future<List<Song>> search(String query, {int limit = 30}) async => [_s()];
-
-  @override
-  Future<List<Song>> trending({int limit = 30, String? genre}) async => [_s()];
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -107,22 +82,6 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('search_field')), 'zzzz');
     await settle(tester);
     expect(find.textContaining('Couldn\'t find'), findsOneWidget);
-
-    // Online search through the provider.
-    OnlineMusic.provider = _FakeProvider();
-    addTearDown(() => OnlineMusic.provider = AudiusProvider());
-    await tester.enterText(find.byKey(const ValueKey('search_field')), '');
-    await tester.tap(find.byKey(const ValueKey('scope_online')));
-    await settle(tester);
-    expect(find.text('Trending on Fake'), findsOneWidget);
-    expect(find.text('Cloud Song'), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('search_field')), 'cloud');
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 600)));
-    await settle(tester);
-    expect(find.text('Results for "cloud"'), findsOneWidget);
-    expect(find.text('Cloud Song'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('scope_device')));
-    await settle(tester);
 
     await tester.tap(find.byKey(const ValueKey('nav_library')));
     await settle(tester);

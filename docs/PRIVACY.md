@@ -9,7 +9,6 @@ FreakFM is an offline music player. It is developed by Alferid Hassen.
 - **Notifications / foreground service** — used to show playback controls and keep music playing in the background.
 
 ## What leaves your device
-- When you use **Search → Online**, your search words are sent to Audius (audius.co), and songs are streamed from Audius servers. Audius's own privacy policy applies to that service. No account, advertising ID or device identifier is sent by FreakFM.
 - When you open the lyrics screen, the **song title, artist, album and duration** are sent to the public lyrics services LRCLIB (lrclib.net) and Lyrics.ovh to look up lyrics. No account, advertising ID or device identifier is sent.
 - Nothing else is transmitted. FreakFM has **no analytics, no ads, no trackers and no user accounts**.
 

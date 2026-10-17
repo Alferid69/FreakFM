@@ -14,7 +14,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
-import android.net.wifi.WifiManager
 import android.provider.MediaStore
 import android.util.Size
 import androidx.core.content.FileProvider
@@ -35,7 +34,6 @@ class MainActivity : AudioServiceActivity() {
     private val queryExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val artworkExecutor: ExecutorService = Executors.newFixedThreadPool(2)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,29 +41,9 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
-        setNetworkLock(false)
         queryExecutor.shutdown()
         artworkExecutor.shutdown()
         super.onDestroy()
-    }
-
-    /// Keeps Wi-Fi awake while streaming with the screen off; without it many
-    /// phones power the radio down and online songs stall in the background.
-    private fun setNetworkLock(enabled: Boolean) {
-        try {
-            if (enabled) {
-                if (wifiLock == null) {
-                    val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-                    val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-                    else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF
-                    wifiLock = wifi.createWifiLock(mode, "FreakFM:stream").apply { setReferenceCounted(false) }
-                }
-                if (wifiLock?.isHeld == false) wifiLock?.acquire()
-            } else if (wifiLock?.isHeld == true) {
-                wifiLock?.release()
-            }
-        } catch (_: Exception) {
-        }
     }
 
     private fun runInBackground(
@@ -89,10 +67,6 @@ class MainActivity : AudioServiceActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
-                "setNetworkLock" -> {
-                    setNetworkLock(call.argument<Boolean>("enabled") ?: false)
-                    result.success(true)
-                }
                 "isIgnoringBatteryOptimizations" -> {
                     val pm = getSystemService(POWER_SERVICE) as PowerManager
                     result.success(pm.isIgnoringBatteryOptimizations(packageName))
