@@ -41,6 +41,36 @@ void main() {
     });
   });
 
+  group('lookahead', () {
+    test('lists the next songs in order and stops at the end with repeat off', () {
+      final q = PlaybackQueue()..setQueue(_songs(5), 1);
+      expect(q.lookahead(2, AudioRepeatMode.off), [2, 3]);
+      expect(q.lookahead(10, AudioRepeatMode.off), [2, 3, 4]);
+    });
+
+    test('wraps around with repeat all but never lists a lone song twice', () {
+      final q = PlaybackQueue()..setQueue(_songs(3), 2);
+      expect(q.lookahead(4, AudioRepeatMode.all), [0, 1, 2, 0]);
+      final single = PlaybackQueue()..setQueue(_songs(1), 0);
+      expect(single.lookahead(3, AudioRepeatMode.all), isEmpty);
+    });
+
+    test('is empty for repeat one, and does not move the queue', () {
+      final q = PlaybackQueue()..setQueue(_songs(4), 0);
+      expect(q.lookahead(3, AudioRepeatMode.one), isEmpty);
+      q.lookahead(3, AudioRepeatMode.all);
+      expect(q.index, 0);
+    });
+
+    test('follows the shuffle order and matches what advance() will play', () {
+      final q = PlaybackQueue(random: Random(3))
+        ..setQueue(_songs(6), 0)
+        ..setShuffle(true);
+      final planned = q.lookahead(3, AudioRepeatMode.off);
+      expect([for (var i = 0; i < 3; i++) q.advance(AudioRepeatMode.off)], planned);
+    });
+  });
+
   group('shuffle', () {
     test('plays every song exactly once per pass, starting with the current', () {
       final q = PlaybackQueue(random: Random(42))

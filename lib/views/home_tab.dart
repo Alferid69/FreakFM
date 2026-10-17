@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/collections.dart';
 import '../services/library_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/battery_tip.dart';
 import '../widgets/art_color.dart';
 import '../widgets/spotify_widgets.dart';
 
@@ -62,6 +63,7 @@ class _HomeTabState extends State<HomeTab> {
                 child: CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(child: _buildHeader()),
+                    const SliverToBoxAdapter(child: BatteryTip()),
                     if (songs.isEmpty)
                       SliverToBoxAdapter(child: _buildEmpty())
                     else ...switch (_filter) {

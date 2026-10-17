@@ -71,6 +71,7 @@ class MiniPlayer extends StatelessWidget {
                                   ],
                                 ),
                               ),
+                              if (!song.isOnline)
                               ValueListenableBuilder<int>(
                                 valueListenable: LibraryService.instance.revision,
                                 builder: (context, _, _) => IconButton(

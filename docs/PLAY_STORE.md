@@ -21,6 +21,7 @@ Releases built by CI are then signed with this key and ship a Play-ready `.aab` 
   • Finds every song on your device automatically
   • Spotify-inspired Home, Search and Your Library
   • Albums, artists, playlists, liked songs, queue, sleep timer, playback speed
+  • Stream free music from Audius (Search → Online)
   • Synced lyrics (LRCLIB) and shareable lyric cards
   • Real equalizer, gapless background playback, lock-screen controls
 - **Icon:** `docs/play-store/icon-512.png`
@@ -30,7 +31,7 @@ Releases built by CI are then signed with this key and ship a Play-ready `.aab` 
 - **Privacy policy URL:** https://github.com/Alferid69/freak_shit_show/blob/main/docs/PRIVACY.md
 
 ## 4. Policy forms
-- **Data safety:** collects no data; data sent off-device: song title/artist/album for lyrics lookup (not linked to identity, encrypted in transit).
+- **Data safety:** collects no data; data sent off-device: song title/artist/album for lyrics lookup, and search text for online music search (not linked to identity, encrypted in transit).
 - **Content rating:** questionnaire → Everyone.
 - **Ads:** none. **Target audience:** 13+ (not for children).
 - **Permission declaration:** `READ_MEDIA_AUDIO` — core function is playing the user's own audio files. `FOREGROUND_SERVICE_MEDIA_PLAYBACK` — background music playback.

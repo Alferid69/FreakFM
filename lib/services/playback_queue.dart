@@ -29,6 +29,25 @@ class PlaybackQueue {
       ? _order.sublist(_orderPos + 1)
       : [for (var i = _index + 1; i < _songs.length; i++) i];
 
+  /// Up to [count] indices that will play after the current song, in order.
+  /// Unshuffled queues wrap around under repeat-all; a shuffled queue stops
+  /// at the end of its pass (a fresh pass is only drawn when it is reached).
+  List<int> lookahead(int count, AudioRepeatMode repeat) {
+    if (_songs.isEmpty || repeat == AudioRepeatMode.one || count <= 0) return const [];
+    if (_shuffle) return upcomingIndices.take(count).toList();
+    final out = <int>[];
+    var i = _index;
+    while (out.length < count) {
+      i++;
+      if (i >= _songs.length) {
+        if (repeat == AudioRepeatMode.off || _songs.length == 1) break;
+        i = 0;
+      }
+      out.add(i);
+    }
+    return out;
+  }
+
   /// Replaces the queue and positions it at [startIndex].
   void setQueue(List<Song> songs, int startIndex) {
     _songs = List<Song>.unmodifiable(songs);

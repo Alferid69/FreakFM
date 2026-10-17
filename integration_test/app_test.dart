@@ -298,6 +298,36 @@ void main() {
       await player.pause();
     });
 
+    testWidgets('the native playlist follows queue edits made while playing', (tester) async {
+      final player = AudioPlayerService.instance;
+      player.setRepeatMode(AudioRepeatMode.off);
+      player.setShuffle(false);
+      final alpha = seeded.firstWhere((s) => s.title == 'Alpha Tone');
+      final bravo = seeded.firstWhere((s) => s.title == 'Bravo Tone');
+      final charlie = seeded.firstWhere((s) => s.title == 'Charlie Tone');
+
+      await tester.pumpWidget(const FreakMusicPlayerApp());
+      await waitVisible(tester, find.byKey(const ValueKey('nav_library')), 'app to start');
+      await player.playSong(alpha, contextQueue: [alpha, bravo]);
+      await waitFor(tester, () => player.isPlaying.value, reason: 'alpha playing');
+
+      // Edit the queue after the native playlist was built: charlie jumps the line.
+      player.playNext(charlie);
+      await tester.pump(const Duration(seconds: 1));
+
+      await waitFor(tester, () => player.duration.value > Duration.zero, reason: 'duration');
+      await player.seek(player.duration.value - const Duration(milliseconds: 600));
+      await waitFor(tester, () => player.currentSong.value?.id == charlie.id,
+          reason: 'queued song to follow alpha natively');
+      expect(player.queue.value[player.queueIndex.value].id, charlie.id);
+      expect(player.isPlaying.value, isTrue);
+
+      await waitFor(tester, () => player.duration.value > Duration.zero, reason: 'charlie duration');
+      await player.seek(player.duration.value - const Duration(milliseconds: 600));
+      await waitFor(tester, () => player.currentSong.value?.id == bravo.id, reason: 'bravo after charlie');
+      await player.pause();
+    });
+
     testWidgets('a missing file reports an error instead of fake playback', (tester) async {
       final player = AudioPlayerService.instance;
       await tester.pumpWidget(const FreakMusicPlayerApp());

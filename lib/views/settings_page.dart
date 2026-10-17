@@ -4,6 +4,7 @@ import '../services/library_service.dart';
 import '../services/music_scanner_service.dart';
 import '../services/storage_cache_service.dart';
 import '../theme/app_theme.dart';
+import '../services/media_store_channel.dart';
 import '../widgets/equalizer_dialog.dart';
 
 /// Settings: library folders (added / hidden), rescan and playback options.
@@ -138,8 +139,29 @@ class _SettingsPageState extends State<SettingsPage> {
               _section('Also scanned'),
               for (final d in _defaults) _folder(d),
             ],
+            _section('Playback'),
+            FutureBuilder<bool>(
+              future: MediaStoreChannel.isIgnoringBatteryOptimizations(),
+              builder: (context, snap) {
+                final ok = snap.data ?? true;
+                return ListTile(
+                  key: const ValueKey('settings_battery'),
+                  leading: Icon(ok ? Icons.battery_charging_full_rounded : Icons.battery_alert_rounded,
+                      color: ok ? AppTheme.spotifyGreen : Colors.amber),
+                  title: const Text('Keep playing with the screen off'),
+                  subtitle: Text(
+                    ok
+                        ? 'Battery optimization is off for FreakFM'
+                        : 'Tap, find FreakFM and choose "Don\'t optimize" so Android doesn\'t stop your music',
+                    style: const TextStyle(color: AppTheme.spotifyLightGrey),
+                  ),
+                  onTap: ok ? null : () async {
+                    await MediaStoreChannel.openBatterySettings();
+                  },
+                );
+              },
+            ),
             if (player.equalizerSupported) ...[
-              _section('Playback'),
               ListTile(
                 leading: const Icon(Icons.tune_rounded),
                 title: const Text('Equalizer'),

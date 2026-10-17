@@ -33,12 +33,13 @@ class TrackListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final online = song.isOnline;
     final openMenu = onMoreOptions ?? () => showSongOptions(context, song);
 
     return InkWell(
       key: ValueKey('track_${song.id}'),
       onTap: onTap,
-      onLongPress: openMenu,
+      onLongPress: online ? null : openMenu,
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, showArtwork ? 6 : 8, 4, showArtwork ? 6 : 8),
         child: Row(
@@ -81,6 +82,12 @@ class TrackListTile extends StatelessWidget {
                 ],
               ),
             ),
+            if (online)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14),
+                child: Icon(Icons.cloud_queue_rounded, size: 20, color: AppTheme.spotifyLightGrey),
+              )
+            else ...[
             IconButton(
               key: ValueKey('favorite_${song.id}'),
               iconSize: 22,
@@ -100,6 +107,7 @@ class TrackListTile extends StatelessWidget {
               tooltip: 'More options',
               onPressed: openMenu,
             ),
+            ],
           ],
         ),
       ),

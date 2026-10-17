@@ -7,6 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import 'freak_audio_handler.dart';
+import 'media_store_channel.dart';
 import 'library_service.dart';
 import 'lyrics_service.dart';
 import 'playback_queue.dart';
@@ -28,6 +29,13 @@ class EqualizerState {
   const EqualizerState({required this.minDb, required this.maxDb, required this.bands});
 }
 
+/// Identifies one item of the native playlist and the song it plays.
+class _WindowTag {
+  final int serial;
+  final Song song;
+  const _WindowTag(this.serial, this.song);
+}
+
 class AudioPlayerService {
   static final AudioPlayerService instance = AudioPlayerService._internal();
   AudioPlayerService._internal() {
@@ -41,6 +49,16 @@ class AudioPlayerService {
     audioPipeline: _equalizer == null ? null : AudioPipeline(androidAudioEffects: [_equalizer]),
   );
   final PlaybackQueue _queue = PlaybackQueue();
+
+  // Songs are handed to the native player as a short playlist (the current
+  // song plus the next few) so it moves on by itself, gapless, even while the
+  // app's Dart code is throttled or frozen in the background.
+  static const int _windowSize = 8;
+  bool _hasPlaylist = false;
+  Future<void> _windowOp = Future<void>.value();
+  int _tagSerial = 0;
+  int _currentTag = -1;
+  bool _networkLockHeld = false;
 
   final ValueNotifier<Song?> currentSong = ValueNotifier<Song?>(null);
   final ValueNotifier<bool> isPlaying = ValueNotifier<bool>(false);
@@ -110,6 +128,12 @@ class AudioPlayerService {
       LibraryService.instance.updateDuration(song, dur);
     }));
 
+    _subs.add(_player.sequenceStateStream.listen(_onSequenceState));
+
+    // A source that fails mid-playlist (deleted file, dropped connection)
+    // surfaces here; skip it instead of going silent.
+    _subs.add(_player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace _) => _onPlaybackError(e)));
+
     _subs.add(_player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         // A song ending is a transition, not a stop. Publishing "paused" here
@@ -123,6 +147,7 @@ class AudioPlayerService {
         }
         return;
       }
+      if (state.processingState == ProcessingState.ready) _consecutiveFailures = 0;
       final playing = state.playing;
       final buffering = state.processingState == ProcessingState.loading ||
           state.processingState == ProcessingState.buffering;
@@ -186,16 +211,16 @@ class AudioPlayerService {
     // ignore completions until the new source has loaded.
     _completionHandled = true;
 
-    currentSong.value = song;
-    position.value = Duration.zero;
-    duration.value = Duration(milliseconds: song.durationMs);
-    unawaited(FreakAudioHandler.instance?.broadcastSong(song));
+    _announce(song);
 
     _pendingSeek = null;
     _loadInFlight = true;
     try {
-      final source = _sourceFor(song);
-      final loaded = await _player.setAudioSource(source);
+      final child = _childFor(song);
+      _currentTag = (child.tag as _WindowTag).serial;
+      _hasPlaylist = true;
+      await _player.setLoopMode(repeatMode.value == AudioRepeatMode.one ? LoopMode.one : LoopMode.off);
+      final loaded = await _player.setAudioSources([child]);
       if (token != _loadToken) return; // superseded by a newer request
       _loadInFlight = false;
       _completionHandled = false;
@@ -207,24 +232,27 @@ class AudioPlayerService {
 
       if (loaded != null && loaded > Duration.zero) {
         duration.value = loaded;
-        LibraryService.instance.updateDuration(song, loaded);
+        if (!song.isOnline) LibraryService.instance.updateDuration(song, loaded);
       }
       unawaited(_player.play());
+      _setNetworkLock(song.isOnline);
       _consecutiveFailures = 0;
-      LibraryService.instance.recordPlay(song);
-      unawaited(LyricsService.instance.fetchLyrics(song));
+      _onSongStarted(song);
       if (!_equalizerRestored) unawaited(_restoreEqualizer());
       _broadcastPlaybackState();
+      unawaited(_topUpWindow());
     } catch (e) {
       if (token != _loadToken) return;
       _loadInFlight = false;
       debugPrint('Playback error for ${song.filePath}: $e');
-      _errors.add('Can\'t play "${song.title}" — the file is missing or unsupported.');
+      _errors.add(song.isOnline
+          ? 'Can\'t stream "${song.title}" — check your connection.'
+          : 'Can\'t play "${song.title}" — the file is missing or unsupported.');
       // Skip straight on without publishing a stop in between (see the
       // player-state listener); only report "not playing" when nothing in
       // the queue is playable.
       _consecutiveFailures++;
-      if (_consecutiveFailures < _queue.songs.length) {
+      if (_consecutiveFailures < min(_queue.songs.length, 5)) {
         await next();
       } else {
         _consecutiveFailures = 0;
@@ -234,18 +262,125 @@ class AudioPlayerService {
     }
   }
 
-  AudioSource _sourceFor(Song song) {
+  /// Publishes [song] as the one now playing.
+  void _announce(Song song) {
+    currentSong.value = song;
+    position.value = Duration.zero;
+    duration.value = Duration(milliseconds: song.durationMs);
+    unawaited(FreakAudioHandler.instance?.broadcastSong(song));
+  }
+
+  /// Bookkeeping that belongs to a song actually starting.
+  void _onSongStarted(Song song) {
+    if (!song.isOnline) LibraryService.instance.recordPlay(song);
+    unawaited(LyricsService.instance.fetchLyrics(song));
+  }
+
+  UriAudioSource _childFor(Song song) {
+    final tag = _WindowTag(++_tagSerial, song);
     final uri = song.contentUri;
+    if (song.isOnline) return AudioSource.uri(Uri.parse(song.filePath), tag: tag);
     if (_isAndroid && uri != null && uri.startsWith('content://')) {
-      return AudioSource.uri(Uri.parse(uri));
+      return AudioSource.uri(Uri.parse(uri), tag: tag);
     }
     if (song.filePath.startsWith('content://')) {
-      return AudioSource.uri(Uri.parse(song.filePath));
+      return AudioSource.uri(Uri.parse(song.filePath), tag: tag);
     }
     if (!File(song.filePath).existsSync()) {
       throw FileSystemException('File not found', song.filePath);
     }
-    return AudioSource.file(song.filePath);
+    return AudioSource.file(song.filePath, tag: tag);
+  }
+
+  /// The native player moved to the next playlist item on its own.
+  void _onSequenceState(SequenceState state) {
+    final tag = state.currentSource?.tag;
+    if (tag is! _WindowTag || tag.serial == _currentTag || _loadInFlight) return;
+    _currentTag = tag.serial;
+
+    final wanted = _queue.lookahead(_queue.songs.length, repeatMode.value);
+    var idx = wanted.firstWhere((i) => _queue.songs[i].id == tag.song.id, orElse: () => -1);
+    if (idx < 0) idx = _queue.songs.indexWhere((s) => s.id == tag.song.id);
+    if (idx < 0) return;
+
+    _queue.jumpTo(idx);
+    _syncQueueNotifiers();
+    final song = _queue.songs[idx];
+    _announce(song);
+    _onSongStarted(song);
+    _setNetworkLock(song.isOnline);
+    _broadcastPlaybackState();
+    unawaited(_trimAndTopUp());
+  }
+
+  void _onPlaybackError(Object error) {
+    if (_loadInFlight) return; // setAudioSource reports its own failure
+    final song = currentSong.value;
+    debugPrint('Playback error mid-stream: $error');
+    if (song != null) {
+      _errors.add(song.isOnline
+          ? 'Lost the connection to "${song.title}".'
+          : 'Can\'t play "${song.title}" — the file is missing or unsupported.');
+    }
+    _consecutiveFailures++;
+    if (_consecutiveFailures < min(_queue.songs.length, 5)) {
+      unawaited(next());
+    } else {
+      _consecutiveFailures = 0;
+      isPlaying.value = false;
+      _broadcastPlaybackState();
+    }
+  }
+
+  /// Runs window edits one at a time so they never interleave.
+  Future<void> _serialWindow(Future<void> Function() op) {
+    return _windowOp = _windowOp.then((_) => op()).catchError((Object e) {
+      debugPrint('Playlist update failed: $e');
+    });
+  }
+
+  /// Drops played items and appends so the next [_windowSize] songs are queued.
+  Future<void> _trimAndTopUp() => _serialWindow(() async {
+        final current = _player.currentIndex ?? 0;
+        if (_hasPlaylist && current >= 3 && current <= _player.audioSources.length) {
+          await _player.removeAudioSourceRange(0, current);
+        }
+        await _fillWindow();
+      });
+
+  Future<void> _topUpWindow() => _serialWindow(_fillWindow);
+
+  /// Replaces everything after the current item, after the queue changed.
+  Future<void> _rebuildWindow() => _serialWindow(() async {
+        final current = _player.currentIndex ?? 0;
+        if (!_hasPlaylist || _loadInFlight) return;
+        final length = _player.audioSources.length;
+        if (length > current + 1) await _player.removeAudioSourceRange(current + 1, length);
+        await _fillWindow();
+      });
+
+  Future<void> _fillWindow() async {
+    if (!_hasPlaylist || _loadInFlight) return;
+    final current = _player.currentIndex ?? 0;
+    final existing = max(0, _player.audioSources.length - current - 1);
+    final wanted = _queue.lookahead(_windowSize, repeatMode.value);
+    if (wanted.length <= existing) return;
+    final adds = <AudioSource>[];
+    for (final i in wanted.skip(existing)) {
+      try {
+        adds.add(_childFor(_queue.songs[i]));
+      } catch (_) {
+        break; // keep the window contiguous; a missing file is handled on arrival
+      }
+    }
+    if (adds.isNotEmpty) await _player.addAudioSources(adds);
+  }
+
+  /// Streaming with the screen off needs Wi-Fi to stay awake.
+  void _setNetworkLock(bool held) {
+    if (!_isAndroid || _networkLockHeld == held) return;
+    _networkLockHeld = held;
+    unawaited(MediaStoreChannel.setNetworkLock(held));
   }
 
   void _handleTrackCompleted() {
@@ -270,6 +405,7 @@ class AudioPlayerService {
     await _seekPlatform(Duration.zero);
     isPlaying.value = false;
     isBuffering.value = false;
+    _setNetworkLock(false);
     _broadcastPlaybackState();
   }
 
@@ -289,10 +425,12 @@ class AudioPlayerService {
       await _seekPlatform(Duration.zero);
     }
     unawaited(_player.play());
+    _setNetworkLock(currentSong.value?.isOnline ?? false);
   }
 
   Future<void> pause() async {
     await _player.pause();
+    _setNetworkLock(false);
   }
 
   Future<void> togglePlayPause() async {
@@ -404,6 +542,7 @@ class AudioPlayerService {
     _removeUpcomingCopy(song);
     _queue.insertNext(song);
     _syncQueueNotifiers();
+    unawaited(_rebuildWindow());
   }
 
   /// Adds [song] to the end of the queue.
@@ -415,6 +554,7 @@ class AudioPlayerService {
     _removeUpcomingCopy(song);
     _queue.append(song);
     _syncQueueNotifiers();
+    unawaited(_rebuildWindow());
   }
 
   void _removeUpcomingCopy(Song song) {
@@ -430,11 +570,14 @@ class AudioPlayerService {
   void setShuffle(bool enabled) {
     isShuffle.value = enabled;
     _queue.setShuffle(enabled);
+    unawaited(_rebuildWindow());
     _broadcastPlaybackState();
   }
 
   void setRepeatMode(AudioRepeatMode mode) {
     repeatMode.value = mode;
+    unawaited(_player.setLoopMode(mode == AudioRepeatMode.one ? LoopMode.one : LoopMode.off));
+    unawaited(_rebuildWindow());
     _broadcastPlaybackState();
   }
 
@@ -450,16 +593,19 @@ class AudioPlayerService {
     if (index == _queue.index) return; // can't remove what's playing
     _queue.removeAt(index);
     _syncQueueNotifiers();
+    unawaited(_rebuildWindow());
   }
 
   void shuffleQueue() {
     _queue.shuffleInPlace();
     _syncQueueNotifiers();
+    unawaited(_rebuildWindow());
   }
 
   void clearQueue() {
     _queue.clearUpcoming();
     _syncQueueNotifiers();
+    unawaited(_rebuildWindow());
   }
 
   Future<void> setVolume(double vol) async {
